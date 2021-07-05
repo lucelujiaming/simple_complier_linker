@@ -375,6 +375,15 @@ int get_token()
   return token_type;
 }
 
+void skip_token(int c)
+{
+	if (get_current_token_type() != c)
+	{
+		printf("Missing %d", c);
+	}
+	get_token();
+}
+
 void color_token(int lex_state, int tokenType, char * printStr)
 {
 	HANDLE handle = GetStdHandle(STD_OUTPUT_HANDLE);
