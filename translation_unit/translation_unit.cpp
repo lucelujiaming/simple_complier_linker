@@ -10,11 +10,164 @@ int syntax_level;
 
 int type_specifier();
 void declarator();
+void direct_declarator();
+void direct_declarator_postfix();
+void parameter_type_list(); // (int func_call);
 
 void syntax_indent()
 {
 
 }
+
+/* <function_calling_convention> ::= <KW_CDECL> | <KW_STDCALL>            */
+/* Such as __stdcall__  | __cdecl                                         */ 
+/*  "__cdecl",       KW_CDECL,		// __cdecl关键字 standard c call      */
+/*	"__stdcall",     KW_STDCALL,    // __stdcall关键字 pascal c call      */
+void function_calling_convention(int *fc)
+{
+	*fc = KW_CDECL;  // Set default value with __cdecl
+	if(get_current_token_type() == KW_CDECL || get_current_token_type() == KW_STDCALL)
+	{
+		*fc = get_current_token_type();
+		syntax_state = SNTX_SP;
+		get_token();
+	}
+}
+
+/* <struct_member_alignment> ::= <KW_ALIGN><TK_OPENPA><TK_INT><TK_CLOSEPA> */
+/* Such as __align(4)                                                        */ 
+/*   "__align",       KW_ALIGN,		// __align关键字	                   */
+void struct_member_alignment() // (int *fc)
+{
+	// Do not need indent or not
+	if(get_current_token_type() == KW_ALIGN)
+	{
+		get_token();
+		skip_token(TK_OPENPA);
+		if(get_current_token_type() == TK_CINT)
+		{
+			get_token();
+		}
+		else
+		{
+			printf("Need intergat");
+		}
+		// *fc = token;
+		skip_token(TK_CLOSEPA);
+	}
+}
+
+/* <declarator> ::= {<TK_STAR>}[<function_calling_convention>]               */
+/*                    [<struct_member_alignment>]<direct_declarator>         */
+/* Such as * __cdecl __align(4) function(int a, int b)                       */ 
+void declarator()
+{
+	int fc ;
+	while(get_current_token_type() == TK_STAR)		// * 星号
+	{
+		get_token();
+	}
+	function_calling_convention(&fc);
+	struct_member_alignment();  // &fc
+	direct_declarator();
+}
+
+/* <direct_declarator> ::= <IDENTIFIER><direct_declarator_postfix>              */
+void direct_declarator()
+{
+	if(get_current_token_type() >= TK_IDENT)  // 函数名或者是变量名，不可以是保留关键字。 
+	{
+		get_token();
+	}
+	else
+	{
+		printf("direct_declarator can not be TK_IDENT");
+	}
+	direct_declarator_postfix();
+}
+
+/* <direct_declarator_postfix> :: = {<TK_OPENBR><TK_CINT><TK_CLOSEBR>       (1)  */
+/*                         | <TK_OPENBR><TK_CLOSEBR>                        (2)  */
+/*                         | <TK_OPENPA><parameter_type_list><TK_CLOSEPA>， (3)  */
+/*                         | <TK_OPENPA><TK_CLOSEPA>}                       (4)  */
+/* Such as var, var[5], var(), var(int a, int b), var[]                          */ 
+void direct_declarator_postfix()
+{
+//	int n;
+	if(get_current_token_type() == TK_OPENPA)         // <TK_OPENPA><parameter_type_list><TK_CLOSEPA> | <TK_OPENPA><TK_CLOSEPA>
+	{
+		parameter_type_list();
+	}
+	else if(get_current_token_type() == TK_OPENBR)   // <TK_OPENBR><TK_CINT><TK_CLOSEBR> | <TK_OPENBR><TK_CLOSEBR>
+	{
+		get_token();
+		if(get_current_token_type() == TK_CINT)
+		{
+			get_token();
+			// n = tkvalue;  // ??
+		}
+		else
+		{
+			printf("Need intergat");
+		}
+		skip_token(TK_CLOSEBR);
+		direct_declarator_postfix();    // Nesting calling
+	}
+	else
+	{
+		printf("Wrong direct_declarator_postfix grammer");
+	}
+}
+
+/*  功能：解析形参类型表                                                  */
+/*  func_call：函数调用约定                                               */
+/*                                                                        */
+/*  <parameter_type_list> ::= <parameter_list>                            */
+/*             | <parameter_list><TK_COMMA><TK_ELLIPSIS>                  */
+/*                 TK_ELLIPSIS is "...",   ... 省略号                     */
+/*  <parameter_list> ::= <parameter_declaration>                          */
+/*                      {<TK_COMMA><parameter_declaration>}               */
+/*      Such as func(int a), func(int a, int b)                           */
+/*  <parameter_declaration> ::= <type_specifier>{<declarator>}            */
+/*      Such as  int a                                                    */
+/*  等价转换后文法：                                                      */
+/*  <parameter_type_list>::=<type_specifier>{<declarator>}                */
+/*   {<TK_COMMA><type_specifier>{<declarator>} } <TK_COMMA><TK_ELLIPSIS>  */
+void parameter_type_list() // (int func_call)
+{
+	get_token();
+	while(get_current_token_type() == TK_CLOSEPA)   // get_token until meet ) 右圆括号
+	{
+		if(!type_specifier())
+		{
+			printf("Invalid type_specifier");
+		}
+		declarator();			// Translate one parameter declaration
+		if(get_current_token_type() == TK_CLOSEPA) // We encounter the ) after one parameter
+		{
+			break;
+		}
+		skip_token(TK_COMMA);
+		if(get_current_token_type() == TK_ELLIPSIS) // We encounter ... 
+		{
+			// func_call = KW_CDECL ; // record the function_calling_convention
+			get_token();
+			break;
+		}
+	}
+	syntax_state = SNTX_DELAY;
+	skip_token(TK_COMMA);
+	if(get_current_token_type() == TK_BEGIN)            // func(int a) {
+
+		syntax_state = SNTX_LF_HT;
+	else                             // func(int a);
+		syntax_state = SNTX_NUL;
+	syntax_indent();
+}
+
+
+
+
 
 /************************************************************************/
 /*  <struct_declaration> ::= <>                  */
@@ -112,11 +265,6 @@ int type_specifier()
 		break;
 	}
 	return type_found ;
-}
-
-void declarator()
-{
-	
 }
 
 void initializer()
