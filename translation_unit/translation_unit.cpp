@@ -14,6 +14,31 @@ void direct_declarator();
 void direct_declarator_postfix();
 void parameter_type_list(); // (int func_call);
 
+void compound_statement();
+void if_statement();
+void break_statement();
+void return_statement();
+void continue_statement();
+void for_statement();
+void expression_statement();
+
+
+void expression()
+{
+
+}
+
+void external_declaration(int v)
+{
+
+}
+
+void assignment_expression()
+{
+
+}
+
+
 void syntax_indent()
 {
 
@@ -165,9 +190,243 @@ void parameter_type_list() // (int func_call)
 	syntax_indent();
 }
 
+// ------------------ func_body 
+/************************************************
+ *  <func_body> ::= <compound_statement>
+ *  因为只要见到<{ 左大括号>就是复合语句，所以<复合语句>的概念比<函数体>概念要大，
+ *  <函数体>属于一类比较特殊的<复合语句>。
+ ***********************/
+void func_body()
+{
+	compound_statement();
+}
 
+// 初值符的代码如下所示。
+/***********************************************************
+* <initializer> ::= <assignment_expression>
+*********************************************/
+void initializer()
+{
+	assignment_expression();
+}
 
+// ------------------ 语句：statement
+/***********************************************************
+ * 功能:	解析语句
+ * bsym:	break跳转位置。暂时没有用。
+ * csym:	continue跳转位置。暂时没有用。
+ *
+ * <statement>::=<compound_statement>    
+ *             | <if_statement>          
+ *             | <return_statement>      
+ *             | <break_statement>       
+ *             | <continue_statement>    
+ *             | <for_statement>         
+ *             | <expression_statement>  
+ **********************************************************/
+void statement()
+{
+	switch(get_current_token_type())
+	{
+	case TK_BEGIN:
+		compound_statement();			// 复合语句
+		break;
+	case KW_IF:
+		if_statement();
+		break;
+	case KW_RETURN:
+		return_statement();
+		break;
+	case KW_BREAK:
+		break_statement();
+		break;
+	case KW_CONTINUE:
+		continue_statement();
+		break;
+	case KW_FOR:
+		for_statement();
+		break;
+	default:
+		expression_statement();
+		break;
+	}
+}
 
+/***********************************************************
+ * <compound_statement> ::= <TK_BEGIN>{<declaration>} {<statement>} <TK_END>
+ **********************************************************/
+int is_type_specifier(int token_type)
+{
+	switch(token_type)
+	{
+	case KW_CHAR:
+	case KW_SHORT:
+	case KW_INT:
+	case KW_VOID:
+	case KW_STRUCT:
+		return 1;
+	default:
+		break;
+	}
+	return 0;
+}
+
+void compound_statement()
+{
+	syntax_state = SNTX_LF_HT;
+	syntax_level++;
+
+	get_token();
+	while(is_type_specifier(get_current_token_type()))
+	{
+		external_declaration(SC_LOCAL);
+	}
+
+	while(get_current_token_type() != TK_END)
+	{
+		statement();
+	}
+	syntax_state = SNTX_LF_HT;
+	get_token();
+}
+
+/***********************************************************
+ * <expression_statement> ::= <TK_SEMICOLON>|<expression><TK_SEMICOLON>
+ *   TK_SEMICOLON 是 ; 分号
+ **********************************************************/
+void expression_statement()
+{
+	if(get_current_token_type() != TK_SEMICOLON)
+	{
+		expression();
+	}
+	syntax_state = SNTX_LF_HT;
+	skip_token(TK_SEMICOLON);
+
+}
+
+/***********************************************************
+ * <if_statement> ::= <KW_IF><TK_OPENPA><expression>
+ *          <TK_CLOSEPA><statement>[<KW_ELSE><statement>]
+ **********************************************************/
+void if_statement()
+{
+	syntax_state = SNTX_SP;
+
+	get_token();
+	skip_token(TK_OPENPA);
+	expression();
+
+	syntax_state = SNTX_LF_HT;
+	skip_token(TK_CLOSEPA);
+	statement();
+
+	if(get_current_token_type() == KW_ELSE)
+	{
+		syntax_state = SNTX_LF_HT;
+		get_token();
+		statement();
+	}
+}	
+
+/***********************************************************
+ *  <for_statement> ::= <KW_FOR><TK_OPENPA><expression_statement>
+ *        <expression_statement><expression><TK_CLOSEPA><statement>
+ **********************************************************/
+void for_statement()
+{
+	get_token();
+	skip_token(TK_OPENPA);
+
+	// Chapter I
+	if(get_current_token_type() != TK_SEMICOLON)   // Such as for(n = 0; n < 100; n++)
+	{
+		expression();
+		skip_token(TK_SEMICOLON);
+	}
+	else 						// Such as for(; n < 100; n++)
+		skip_token(TK_SEMICOLON);
+
+	// Chapter II
+	if(get_current_token_type() != TK_SEMICOLON)   // Such as for(n = 0; n < 100; n++)
+	{
+		expression();
+		skip_token(TK_SEMICOLON);
+	}
+	else 						// Such as for(n = 0; ; n++)
+		skip_token(TK_SEMICOLON);
+
+	// Chapter III
+	if(get_current_token_type() != TK_CLOSEPA)   // Such as for(n = 0; n < 100; n++)
+	{
+		expression();
+		syntax_state = SNTX_LF_HT;
+		skip_token(TK_CLOSEPA);
+	}
+	else 						// Such as for(n = 0; n < 100;)
+	{
+		syntax_state = SNTX_LF_HT;
+		skip_token(TK_CLOSEPA);
+	}
+	// Deal with the body of for_statement 
+	statement(); 
+}
+
+/***********************************************************
+ *  <while_statement> ::= <KW_WHILE><TK_OPENPA><expression><TK_CLOSEPA><statement>
+ **********************************************************/
+void while_statement()
+{
+	get_token();
+	skip_token(TK_OPENPA);
+	// Chapter I
+	expression();
+	skip_token(TK_CLOSEPA);
+	syntax_state = SNTX_LF_HT;
+	// Deal with the body of while_statement 
+	statement(); 
+}
+
+/***********************************************************
+ *  <continue_statement> ::= <KW CONTINUE><TK SEMICOLON>
+ **********************************************************/
+void continue_statement()
+{
+	get_token();
+	syntax_state = SNTX_LF_HT;
+	skip_token(TK_SEMICOLON);
+}
+
+/***********************************************************
+ *  <break_statement> ::= <KW CONTINUE><TK SEMICOLON>
+ **********************************************************/
+void break_statement()
+{
+	get_token();
+	syntax_state = SNTX_LF_HT;
+	skip_token(TK_SEMICOLON);
+}
+
+void return_statement()
+{
+	syntax_state = SNTX_DELAY;
+	get_token();
+	if(get_current_token_type() == TK_SEMICOLON)   // 
+	{
+		syntax_state = SNTX_NUL;
+	}
+	else 						// 
+	{
+		syntax_state = SNTX_SP;
+	}
+	syntax_indent();
+	if(get_current_token_type() != TK_SEMICOLON)   // 
+	{
+		expression();
+	}
+	syntax_state = SNTX_LF_HT;
+	skip_token(TK_SEMICOLON);
+}
 
 /************************************************************************/
 /*  <struct_declaration> ::= <>                  */
@@ -265,11 +524,6 @@ int type_specifier()
 		break;
 	}
 	return type_found ;
-}
-
-void initializer()
-{
-	
 }
 
 void function_body()
