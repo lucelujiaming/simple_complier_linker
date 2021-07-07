@@ -22,22 +22,15 @@ void continue_statement();
 void for_statement();
 void expression_statement();
 
-
-void expression()
-{
-
-}
+void expression();
+void assignment_expression();
+void equality_expression();
+void relational_expression();
 
 void external_declaration(int v)
 {
 
 }
-
-void assignment_expression()
-{
-
-}
-
 
 void syntax_indent()
 {
@@ -388,7 +381,7 @@ void while_statement()
 }
 
 /***********************************************************
- *  <continue_statement> ::= <KW CONTINUE><TK SEMICOLON>
+ *  <continue_statement> ::= <KW_CONTINUE><TK_SEMICOLON>
  **********************************************************/
 void continue_statement()
 {
@@ -398,7 +391,7 @@ void continue_statement()
 }
 
 /***********************************************************
- *  <break_statement> ::= <KW CONTINUE><TK SEMICOLON>
+ *  <break_statement> ::= <KW_CONTINUE><TK_SEMICOLON>
  **********************************************************/
 void break_statement()
 {
@@ -407,6 +400,10 @@ void break_statement()
 	skip_token(TK_SEMICOLON);
 }
 
+/***********************************************************
+ *  <return_statement> ::= <KW_RETURN><TK_SEMICOLON>
+ *                       | <KW_RETURN><expression><TK_SEMICOLON>
+ **********************************************************/
 void return_statement()
 {
 	syntax_state = SNTX_DELAY;
@@ -428,10 +425,147 @@ void return_statement()
 	skip_token(TK_SEMICOLON);
 }
 
-/************************************************************************/
-/*  <struct_declaration> ::= <>                  */
-/*                               {<>}                 */
-/************************************************************************/
+
+/***********************************************************
+ *  <expression> ::= <assignment_expression>
+ *        {<TK_COMMA><assignment_expression>}
+ **********************************************************/
+void expression()
+{
+	while (1)
+	{
+		assignment_expression();
+		if (get_current_token_type() == TK_COMMA)
+		{
+			break;
+		}
+		get_token();
+	}
+}
+
+/***********************************************************
+ *  <assignment_expression> ::= <equality_expression>
+ *           |<unary_expression><TK_ASSIGN><assignment_expression>：
+ *  非等价变换后文法：
+ *  <assignment_expression> ::= <equality_expression>
+ *                  {<TK ASSIGN><assignment expression>} 
+ **********************************************************/
+void assignment_expression()
+{
+	equality_expression();
+	if (get_current_token_type() == TK_ASSIGN)
+	{
+		get_token();
+		assignment_expression();
+	}
+}
+
+/***********************************************************
+ *  <equality expression> ::= <relational_expression>
+ *                    {<TK_EQ><relational_expression>
+ *                    |<TK_NEQ><relational_expression>}
+ **********************************************************/
+void equality_expression()
+{
+	relational_expression();
+//	if (get_current_token_type() == TK_EQ 
+//		|| get_current_token_type() == TK_NEQ)
+	while (get_current_token_type() == TK_EQ 
+		|| get_current_token_type() == TK_NEQ)
+	{
+		get_token();
+		relational_expression();
+	}
+}
+
+void additive_expression();
+void multiplicative_expression();
+void unary_expression();
+/***********************************************************
+ *  <relational_expression> ::= <additive_expression>{
+ *       <TK_LT><additive_expression>    // < 小于号      TK_LT, "<", 
+ *     | <TK_GT><additive_expression>    // <= 小于等于号 TK_LEQ, "<=",
+ *     | <TK_LEQ><additive_expression>   // > 大于号      TK_GT, ">", 
+ *     | <TK_GEQ><additive_expression>}  // >= 大于等于号 TK_GEQ, ">=",
+ **********************************************************/
+void relational_expression()
+{
+	additive_expression();
+	while(get_current_token_type() == TK_LT || get_current_token_type() == TK_LEQ 
+		|| get_current_token_type() == TK_GT || get_current_token_type() == TK_GEQ)
+	{
+		get_token();
+		additive_expression();
+	}
+}
+ 
+/***********************************************************
+ * <additive_expression> ::= <multiplicative_expression>
+ *                {<TK_PLUS><multiplicative_expression>
+ *                 <TK_MINUS><multiplicative_expression>)
+ **********************************************************/
+void additive_expression()
+{
+	multiplicative_expression();
+	while(get_current_token_type() == TK_PLUS || get_current_token_type() == TK_MINUS)
+	{
+		get_token();
+		multiplicative_expression();
+	}
+}
+
+/***********************************************************
+* <multiplicative_expression> ::= <unary_expression>
+*                   {<TK_STAR><unary_expression>
+*                   |<TK_DIVIDE><unary_expression>
+*                   |<TK_MOD><unary_expression>}
+**********************************************************/
+void multiplicative_expression()
+{
+	unary_expression();
+	while(get_current_token_type() == TK_STAR || get_current_token_type() == TK_DIVIDE || get_current_token_type() == TK_MOD)
+	{
+		get_token();
+		unary_expression();
+	}
+}
+
+/***********************************************************
+* <unary_expression> ::= <postfix_expression>
+*                 | <TK_AND><unary_expression>
+*                 | <TK_STAR><unary_expression>
+*                 | <TK_PLUS><unary_expression>
+*                 | <TK_MINUS><unary_expression>
+*                 | <sizeof_expression>
+**********************************************************/
+void unary_expression()
+{
+	switch(get_current_token_type())
+	{
+	case TK_AND:
+	case TK_STAR:
+	case TK_PLUS:
+	case TK_MINUS:
+		get_token();
+		unary_expression();
+		break;
+	case KW_SIZEOF:
+		// sizeof_expression();
+		break;
+	default:
+		break;
+	}
+}
+
+/************************************************************************
+ *	<struct_declaration> ::= 
+ *	<type_specifier><struct_declarator_list><TK_SEMICOLON>*
+ *	<struct_declarator_list> ::= <declarator>{<TK_COMMA><declarator>}
+ *	等价转换后文法：：
+ *	<struct_declaration> ::= 
+ *	<type_specifier><declarator>{<TK_COMMA><declarator>}
+ *	<TK_SEMICOLON>
+ ***********************************************************************/
 void struct_declaration(int * max, int * offset)
 {
 	type_specifier();
