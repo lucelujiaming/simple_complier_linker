@@ -32,9 +32,42 @@ void external_declaration(int v)
 
 }
 
+void print_tab(int nTimes)
+{
+	int n = 1;
+	for (; n < nTimes; n++)
+	{
+		printf("\t");
+	}
+}
+
 void syntax_indent()
 {
-
+	switch(syntax_state) {
+	case SNTX_NUL:
+		color_token(LEX_NORMAL, get_current_token_type(), get_current_token());
+		break;
+	case SNTX_SP:
+		printf("\t");
+		color_token(LEX_NORMAL, get_current_token_type(), get_current_token());
+		break;
+	case SNTX_LF_HT:
+		{
+			if (get_current_token_type() == TK_END)
+			{
+				syntax_level++;
+			}
+			printf("\n");
+			print_tab(syntax_level);
+		}
+		color_token(LEX_NORMAL, get_current_token_type(), get_current_token());
+		break;
+	case SNTX_DELAY:
+		break;
+	default:
+		break;
+	}
+	syntax_state = SNTX_NUL;
 }
 
 /* <function_calling_convention> ::= <KW_CDECL> | <KW_STDCALL>            */
@@ -530,6 +563,9 @@ void multiplicative_expression()
 	}
 }
 
+void primary_expression();
+void postfix_expression();
+void sizeof_expression();
 /***********************************************************
 * <unary_expression> ::= <postfix_expression>
 *                 | <TK_AND><unary_expression>
@@ -550,9 +586,51 @@ void unary_expression()
 		unary_expression();
 		break;
 	case KW_SIZEOF:
-		// sizeof_expression();
+		sizeof_expression();
 		break;
 	default:
+		postfix_expression();
+		break;
+	}
+}
+
+void sizeof_expression()
+{
+	get_token();
+	skip_token(TK_OPENPA);
+	type_specifier();
+	skip_token(TK_CLOSEPA);
+}
+
+void postfix_expression()
+{
+	primary_expression();
+	while (1)
+	{
+		if (get_current_token_type() == TK_DOT
+			|| get_current_token_type() == TK_POINTSTO)
+		{
+			get_token();
+			// token |= SC_MEMBER;
+			get_token();
+		}
+	}
+}
+
+void primary_expression()
+{
+	int t ;
+	switch(get_current_token_type()) {
+	case TK_CINT:
+		get_token();
+		break;
+	default:
+		t = get_current_token_type();
+		get_token();
+		if (t < TK_IDENT)
+		{
+			printf("Need variable or constant");
+		}
 		break;
 	}
 }
@@ -723,6 +801,8 @@ void translation_unit()
 		external_declaration(SC_GLOBAL);
 	}
 }
+
+
 
 int main(int argc, char* argv[])
 {
