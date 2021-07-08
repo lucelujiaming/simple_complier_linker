@@ -101,7 +101,7 @@ void struct_member_alignment() // (int *fc)
 		}
 		else
 		{
-			printf("Need intergat");
+			printf("Need intergat\n");
 		}
 		// *fc = token;
 		skip_token(TK_CLOSEPA);
@@ -132,7 +132,7 @@ void direct_declarator()
 	}
 	else
 	{
-		printf("direct_declarator can not be TK_IDENT");
+		printf("direct_declarator can not be TK_IDENT\n");
 	}
 	direct_declarator_postfix();
 }
@@ -159,14 +159,14 @@ void direct_declarator_postfix()
 		}
 		else
 		{
-			printf("Need intergat");
+			printf("Need intergat\n");
 		}
 		skip_token(TK_CLOSEBR);
 		direct_declarator_postfix();    // Nesting calling
 	}
 	else
 	{
-		printf("Wrong direct_declarator_postfix grammer");
+		printf("Wrong direct_declarator_postfix grammer\n");
 	}
 }
 
@@ -191,7 +191,7 @@ void parameter_type_list() // (int func_call)
 	{
 		if(!type_specifier())
 		{
-			printf("Invalid type_specifier");
+			printf("Invalid type_specifier\n");
 		}
 		declarator();			// Translate one parameter declaration
 		if(get_current_token_type() == TK_CLOSEPA) // We encounter the ) after one parameter
@@ -566,6 +566,7 @@ void multiplicative_expression()
 void primary_expression();
 void postfix_expression();
 void sizeof_expression();
+void argument_expression_list();
 /***********************************************************
 * <unary_expression> ::= <postfix_expression>
 *                 | <TK_AND><unary_expression>
@@ -594,6 +595,10 @@ void unary_expression()
 	}
 }
 
+/***********************************************************
+ *  <sizeof_expression> ::= 
+ *     <KW_SIZEOF><TK_OPENPA><type_specifier><TK_CLOSEPA>
+ **********************************************************/
 void sizeof_expression()
 {
 	get_token();
@@ -602,37 +607,91 @@ void sizeof_expression()
 	skip_token(TK_CLOSEPA);
 }
 
+/***********************************************************
+ *  <postfix_expression> ::= <primary_expression>
+ *    { <TK_OPENBR><expression><TK_CLOSEBR>
+ *    | <TK_OPENPA><TK_CLOSEPA>
+ *    | <TK_OPENPA><argument_expression_list><TK_CLOSEPA>
+ *    | <TK_DOT><IDENTIFIER>
+ *    | <TK POINTS TO><IDENTIFIER>}
+ **********************************************************/
 void postfix_expression()
 {
 	primary_expression();
 	while (1)
 	{
-		if (get_current_token_type() == TK_DOT
-			|| get_current_token_type() == TK_POINTSTO)
+		if (get_current_token_type() == TK_DOT               // | <TK_DOT><IDENTIFIER>
+			|| get_current_token_type() == TK_POINTSTO)      // | <TK_POINTSTO><IDENTIFIER>
 		{
 			get_token();
 			// token |= SC_MEMBER;
 			get_token();
 		}
+		else if (get_current_token_type() == TK_OPENBR)      // <TK_OPENBR><expression><TK_CLOSEBR>
+		{
+			get_token();
+			expression();
+			skip_token(TK_CLOSEBR);
+		}
+		else if (get_current_token_type() == TK_OPENPA)      // <TK_OPENPA><argument_expression_list><TK_CLOSEPA>
+		{
+			argument_expression_list();
+		}
+		else
+			break;
 	}
 }
 
+/***********************************************************
+ *  <primary_expression> ::= <IDENTIFIER>
+ *     | <TK_CINT>
+ *     | <TK_CCHAR>
+ *     | <TK_CSTR>
+ *     | <TK_OPENPA><expression><TK_CLOSEPA>
+ **********************************************************/
 void primary_expression()
 {
 	int t ;
 	switch(get_current_token_type()) {
 	case TK_CINT:
+	case TK_CCHAR:
+	case TK_CSTR:
 		get_token();
+		break;
+	case TK_OPENPA:
+		get_token();
+		expression();
+		skip_token(TK_CLOSEPA);
 		break;
 	default:
 		t = get_current_token_type();
 		get_token();
 		if (t < TK_IDENT)
 		{
-			printf("Need variable or constant");
+			printf("Need variable or constant\n");
 		}
 		break;
 	}
+}
+
+/***********************************************************
+ *  <argument_expression_list> ::= <assignment_expression>
+ *                      {<TK_COMMA><assignment_expression>}
+ **********************************************************/
+void argument_expression_list()
+{
+	get_token();
+	if(get_current_token_type() != TK_OPENPA) 
+	{
+		for(;;)
+		{
+			assignment_expression();
+			if(get_current_token_type() == TK_CLOSEPA)
+				break;
+			skip_token(TK_COMMA);
+		}
+	}
+	skip_token(TK_CLOSEPA);
 }
 
 /************************************************************************
@@ -702,7 +761,7 @@ void struct_specifier()
 	syntax_indent();
 	if (v < TK_IDENT)  // Key word is illegal
 	{
-		printf("Need struct name");
+		printf("Need struct name\n");
 	}
 
 	if (get_current_token_type() == TK_BEGIN)
@@ -750,7 +809,7 @@ void external_declaration(e_StorageClass iSaveType)
 {
 	if (!type_specifier())
 	{
-		printf("Need type token");
+		printf("Need type token\n");
 	}
 
 	if (get_current_token_type() == TK_SEMICOLON)
@@ -766,7 +825,7 @@ void external_declaration(e_StorageClass iSaveType)
 		{
 			if (iSaveType == SC_LOCAL)
 			{
-				printf("Not nexsting function");
+				printf("Not nexsting function\n");
 			}
 			function_body();
 			break;
@@ -806,7 +865,11 @@ void translation_unit()
 
 int main(int argc, char* argv[])
 {
+	token_init(argv[1]);
+	get_token();
+	translation_unit();
 	printf("Hello World!\n");
+	token_cleanup();
 	return 0;
 }
 
