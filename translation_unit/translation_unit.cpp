@@ -799,7 +799,7 @@ int type_specifier()
 
 void function_body()
 {
-	
+    compound_statement();
 }
 
 /************************************************************************/
