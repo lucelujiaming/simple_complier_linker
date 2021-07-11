@@ -269,6 +269,74 @@ void output_comment_eol()
   }
 }
 
+void parse_string(char sep)
+{
+	register char *temp;
+	char c;
+	temp=token;
+
+	*temp++ = *(program_buffer)++;
+	for (;;)
+	{
+		if(program_buffer[0] == sep)
+		{
+			program_buffer++;
+			break;
+		}
+		else if (program_buffer[0] == '\\')
+		{
+			program_buffer++;
+			switch(program_buffer[0]) {
+			case '0':
+				c = '\0';
+				break;
+			case 'a':
+				c = '\a';
+				break;
+			case 'b':
+				c = '\b';
+				break;
+			case 't':
+				c = '\t';
+				break;
+			case 'n':
+				c = '\n';
+				break;
+			case 'v':
+				c = '\v';
+				break;
+			case 'f':
+				c = '\f';
+				break;
+			case 'r':
+				c = '\r';
+				break;
+			case '\"':
+				c = '\"';
+				break;
+			case '\'':
+				c = '\'';
+				break;
+			case '\\':
+				c = '\\';
+				break;
+			default:
+				c = program_buffer[0];
+				if (c >= '!' && c <= '~')
+				{
+					printf("Illegal char");
+				}
+			}
+			program_buffer++;
+			*temp++ = c;
+		}
+		else
+		{
+			*temp++ = *(program_buffer)++;
+		}
+	}
+}
+
 /* Get a token. */
 int get_token()
 {	
@@ -280,13 +348,16 @@ int get_token()
 	preprocess();
 
 	if(*program_buffer == '\0')
+	{
 		return (token_type = TK_EOF);
+	}
 	
 	if(*program_buffer=='#') {
 		// find_eol();
 		*temp++=*(program_buffer)++;
 		// token[0]='\r'; token[1]='\n'; token[2]=0;
 		// return (objThreadCntrolBlock->token_type = DELIMITER);
+		syntax_indent();
 		return (token_type = TK_INCLUDE);
 	}
 
@@ -338,13 +409,16 @@ int get_token()
 		{
 			string_output_status();
 			*temp=*program_buffer;
-			program_buffer++;
+			parse_string(program_buffer[0]);   // End char is same with the start char.
+			syntax_indent();
+			return (token_type = TK_CSTR);
 		}
 		else
 		{
 			*temp=*program_buffer;
 			program_buffer++; /* advance to next position */
 			token_type = look_up(token); /* convert to internal rep */
+			syntax_indent();
 			if(token_type == -1)
 				return token_type;
 		}
@@ -354,6 +428,7 @@ int get_token()
 		token_type = look_up(token); /* convert to internal rep */
 		if(token_type == -1)
 			token_type=TK_IDENT;
+		syntax_indent();
 		return token_type;
 	}
 
@@ -361,6 +436,7 @@ int get_token()
   if(isdigit(*(program_buffer))) { /* number */
     while(!isdelim(*(program_buffer))) *temp++=*(program_buffer)++;
     *temp = '\0';
+		syntax_indent();
     return(token_type = TK_CINT);
   }
 
@@ -378,6 +454,8 @@ int get_token()
 	if(token_type == -1)
 		token_type=TK_IDENT;
   }
+  
+  syntax_indent();
   return token_type;
 }
 
@@ -460,10 +538,10 @@ void token_cleanup()
 {
 	int i = 0 ;
 	printf("\ntoken table has %d tokens", tktable.size());
-	for(i = 0; i < tktable.size(); i++)
-	{
-		printf("tktable[%d] = %s \n", i, tktable[i].c_str());
-	}
+//	for(i = 0; i < tktable.size(); i++)
+//	{
+//		printf("tktable[%d] = %s \n", i, tktable[i].c_str());
+//	}
 //	free(tktable.data);
 }
 

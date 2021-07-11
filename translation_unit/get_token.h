@@ -13,4 +13,5 @@ void push_token(char * strNewToken);
 char * get_current_token();
 int get_current_token_type();
 void skip_token(int c);
+void syntax_indent();
 #endif
