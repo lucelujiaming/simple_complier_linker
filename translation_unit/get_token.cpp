@@ -133,14 +133,17 @@ int load_program(char *p, char *pname)
 void parse_ctype_comment()
 {
 	do {
-		if(program_buffer[0] == '\n' || program_buffer[0] == '*'
-			|| program_buffer[0] == '\0')
-			break;
-		else
-		{
-			color_single_char(LEX_NORMAL, TK_COMMENT, *program_buffer);
-			program_buffer++;
-		}
+		// read until meet <ENTER> / <STAR> / <END>
+		do{
+			if(program_buffer[0] == '\n' || program_buffer[0] == '*'
+				|| program_buffer[0] == '\0')
+				break;
+			else
+			{
+				color_single_char(LEX_NORMAL, TK_COMMENT, *program_buffer);
+				program_buffer++;
+			}
+		} while (1);
 
 		if(program_buffer[0] == '\n')
 		{
@@ -341,13 +344,16 @@ int get_token()
 		{
 			*temp=*program_buffer;
 			program_buffer++; /* advance to next position */
+			token_type = look_up(token); /* convert to internal rep */
+			if(token_type == -1)
+				return token_type;
 		}
 		// lookup the token type by temp 2021/0627
 		temp++;
 		*temp=0;
 		token_type = look_up(token); /* convert to internal rep */
 		if(token_type == -1)
-			token_type=TK_CCHAR;
+			token_type=TK_IDENT;
 		return token_type;
 	}
 
@@ -361,16 +367,16 @@ int get_token()
   if(isalpha(*(program_buffer))) { /* var or command */
     while(!isdelim(*(program_buffer))) 
 		*temp++=*(program_buffer)++;
-    token_type=TK_CSTR;
+    token_type=TK_IDENT;
   }
 
   *temp = '\0';
 
   /* see if a string is a command or a variable */
-  if(token_type==TK_CSTR) {
+  if(token_type==TK_IDENT) {
     token_type = look_up(token); /* convert to internal rep */
 	if(token_type == -1)
-		token_type=TK_CSTR;
+		token_type=TK_IDENT;
   }
   return token_type;
 }

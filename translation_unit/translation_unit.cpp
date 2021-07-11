@@ -27,9 +27,11 @@ void assignment_expression();
 void equality_expression();
 void relational_expression();
 
-void external_declaration(int v)
-{
+void external_declaration(e_StorageClass iSaveType);
 
+void print_error(char * strErrInfo)
+{
+	printf("<ERROR> %s", strErrInfo);
 }
 
 void print_tab(int nTimes)
@@ -101,7 +103,7 @@ void struct_member_alignment() // (int *fc)
 		}
 		else
 		{
-			printf("Need intergat\n");
+			print_error("Need intergat\n");
 		}
 		// *fc = token;
 		skip_token(TK_CLOSEPA);
@@ -124,7 +126,7 @@ void declarator()
 }
 
 /* <direct_declarator> ::= <IDENTIFIER><direct_declarator_postfix>              */
-void direct_declarator()
+void direct_declarator()   // Not support argv[] usage
 {
 	if(get_current_token_type() >= TK_IDENT)  // 函数名或者是变量名，不可以是保留关键字。 
 	{
@@ -132,7 +134,7 @@ void direct_declarator()
 	}
 	else
 	{
-		printf("direct_declarator can not be TK_IDENT\n");
+		print_error("direct_declarator can not be TK_IDENT\n");
 	}
 	direct_declarator_postfix();
 }
@@ -159,14 +161,10 @@ void direct_declarator_postfix()
 		}
 		else
 		{
-			printf("Need intergat\n");
+			print_error("Need intergat\n");
 		}
 		skip_token(TK_CLOSEBR);
 		direct_declarator_postfix();    // Nesting calling
-	}
-	else
-	{
-		printf("Wrong direct_declarator_postfix grammer\n");
 	}
 }
 
@@ -187,11 +185,11 @@ void direct_declarator_postfix()
 void parameter_type_list() // (int func_call)
 {
 	get_token();
-	while(get_current_token_type() == TK_CLOSEPA)   // get_token until meet ) 右圆括号
+	while(get_current_token_type() != TK_CLOSEPA)   // get_token until meet ) 右圆括号
 	{
 		if(!type_specifier())
 		{
-			printf("Invalid type_specifier\n");
+			print_error("Invalid type_specifier\n");
 		}
 		declarator();			// Translate one parameter declaration
 		if(get_current_token_type() == TK_CLOSEPA) // We encounter the ) after one parameter
@@ -468,7 +466,8 @@ void expression()
 	while (1)
 	{
 		assignment_expression();
-		if (get_current_token_type() == TK_COMMA)
+		// Exit except this kind of code : int a = 1, b = 2; 
+		if (get_current_token_type() != TK_COMMA)   
 		{
 			break;
 		}
@@ -666,9 +665,9 @@ void primary_expression()
 	default:
 		t = get_current_token_type();
 		get_token();
-		if (t < TK_IDENT)
+		if (t < TK_IDENT) // The problem of String at 07/11, We need the parse_string function
 		{
-			printf("Need variable or constant\n");
+			print_error("Need variable or constant\n");
 		}
 		break;
 	}
@@ -761,7 +760,7 @@ void struct_specifier()
 	syntax_indent();
 	if (v < TK_IDENT)  // Key word is illegal
 	{
-		printf("Need struct name\n");
+		print_error("Need struct name\n");
 	}
 
 	if (get_current_token_type() == TK_BEGIN)
@@ -799,7 +798,7 @@ int type_specifier()
 
 void function_body()
 {
-    compound_statement();
+	compound_statement();
 }
 
 /************************************************************************/
@@ -809,7 +808,7 @@ void external_declaration(e_StorageClass iSaveType)
 {
 	if (!type_specifier())
 	{
-		printf("Need type token\n");
+		print_error("Need type token\n");
 	}
 
 	if (get_current_token_type() == TK_SEMICOLON)
@@ -825,26 +824,28 @@ void external_declaration(e_StorageClass iSaveType)
 		{
 			if (iSaveType == SC_LOCAL)
 			{
-				printf("Not nexsting function\n");
+				print_error("Not nexsting function\n");
 			}
 			function_body();
 			break;
 		}
 		else
 		{
-			if (get_current_token_type() == TK_ASSIGN)
+			if (get_current_token_type() == TK_ASSIGN)  // int a = 5 ;
 			{
 				get_token();
 				initializer();
 			}
 			
-			if(get_current_token_type() ==TK_COMMA)
+			if(get_current_token_type() ==TK_COMMA)  // int a, b ;
 			{
 				get_token();
 			}
-			else
+			else									// int a;
 			{
-
+				syntax_state = SNTX_LF_HT;
+				skip_token(TK_SEMICOLON);
+				break;
 			}
 		}
 	}
@@ -855,7 +856,7 @@ void external_declaration(e_StorageClass iSaveType)
 /************************************************************************/
 void translation_unit()
 {
-	if (get_current_token_type() != TK_EOF)
+	while (get_current_token_type() != TK_EOF)
 	{
 		external_declaration(SC_GLOBAL);
 	}
