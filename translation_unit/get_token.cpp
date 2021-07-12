@@ -280,11 +280,13 @@ void parse_string(char sep)
 	{
 		if(program_buffer[0] == sep)
 		{
+			*temp++ = program_buffer[0];
 			program_buffer++;
 			break;
 		}
 		else if (program_buffer[0] == '\\')
 		{
+			*temp++ = program_buffer[0];
 			program_buffer++;
 			switch(program_buffer[0]) {
 			case '0':
@@ -327,8 +329,9 @@ void parse_string(char sep)
 					printf("Illegal char");
 				}
 			}
+			// *temp++ = c;
+			*temp++ = program_buffer[0];
 			program_buffer++;
-			*temp++ = c;
 		}
 		else
 		{
@@ -418,9 +421,11 @@ int get_token()
 			*temp=*program_buffer;
 			program_buffer++; /* advance to next position */
 			token_type = look_up(token); /* convert to internal rep */
-			syntax_indent();
 			if(token_type == -1)
+			{
+				syntax_indent();
 				return token_type;
+			}
 		}
 		// lookup the token type by temp 2021/0627
 		temp++;
@@ -436,7 +441,7 @@ int get_token()
   if(isdigit(*(program_buffer))) { /* number */
     while(!isdelim(*(program_buffer))) *temp++=*(program_buffer)++;
     *temp = '\0';
-		syntax_indent();
+	syntax_indent();
     return(token_type = TK_CINT);
   }
 
@@ -501,9 +506,13 @@ void color_token(int lex_state, int tokenType, char * printStr)
 		if(string_output_status_indicator != STRING_OUTPUT_NONE)
 		{
 			SetConsoleTextAttribute(handle, FOREGROUND_BLUE | FOREGROUND_RED);
-			string_output_status_tailoperation();
+			printf("%s", printStr);
+			string_output_status_indicator = STRING_OUTPUT_NONE;
 		}
-		printf("%s", printStr);
+		else
+		{
+			printf("%s", printStr);
+		}
 		break;
 	case LEX_SEP:
 		printf("%c", *printStr);

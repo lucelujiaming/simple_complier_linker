@@ -36,7 +36,7 @@ void print_error(char * strErrInfo)
 
 void print_tab(int nTimes)
 {
-	int n = 1;
+	int n = 0;
 	for (; n < nTimes; n++)
 	{
 		printf("\t");
@@ -50,14 +50,14 @@ void syntax_indent()
 		color_token(LEX_NORMAL, get_current_token_type(), get_current_token());
 		break;
 	case SNTX_SP:
-		printf("\t");
+		printf(" ");
 		color_token(LEX_NORMAL, get_current_token_type(), get_current_token());
 		break;
 	case SNTX_LF_HT:
 		{
 			if (get_current_token_type() == TK_END)
 			{
-				syntax_level++;
+				syntax_level--;
 			}
 			printf("\n");
 			print_tab(syntax_level);
@@ -748,6 +748,7 @@ void struct_specifier()
 	get_token();		// Get struct name <IDENTIFIER>
 	v = get_current_token_type();
 	syntax_state = SNTX_DELAY;
+	// DELAY disable print in the get_token
 	get_token(); // Get token after the struct name
 
 	if(get_current_token_type() == TK_BEGIN) // Indent at {
