@@ -20,19 +20,19 @@ typedef struct Section_t{
 typedef struct CoffSym 
 {
 
-    DWORD Name;					// 符号名称
-	DWORD Next;					// 用于保存冲突链表*/
+    DWORD name;					// 符号名称
+	DWORD next;					// 用于保存冲突链表*/
     /* 
     struct {
 		DWORD   Short;			// if 0, use LongName
         DWORD   Long;			// offset into string table
     } name;
 	*/
-    DWORD   Value;				// 与符号相关的值
+    DWORD   value;				// 与符号相关的值
     short   shortSection;		// 节表的索引(从1开始),用以标识定义此符号的节*/
-    WORD    Type;				// 一个表示类型的数字
-    BYTE    StorageClass;		// 这是一个表示存储类别的枚举类型值
-    BYTE    NumberOfAuxSymbols;	// 跟在本记录后面的辅助符号表项的个数
+    WORD    type;				// 一个表示类型的数字
+    BYTE    storageClass;		// 这是一个表示存储类别的枚举类型值
+    BYTE    numberOfAuxSymbols;	// 跟在本记录后面的辅助符号表项的个数
 } CoffSym;
 
 /* 类型存储结构定义 */
@@ -62,5 +62,14 @@ typedef struct TkWord
     struct Symbol *sym_struct;		// 指向单词所表示的结构定义
     struct Symbol *sym_identifier;	// 指向单词所表示的标识符
 } TkWord;
+
+/* 重定位结构定义 */
+typedef struct CoffReloc 
+{
+    DWORD offset;	// 需要进行重定位的代码或数据的地址
+    DWORD cfsym;				// 符号表的索引(从0开始)
+	BYTE  section;  // 此处讲一下为什么对COFF重定位结构进行修改记录Section信息*/
+    BYTE  type;    
+} CoffReloc;
 
 #endif

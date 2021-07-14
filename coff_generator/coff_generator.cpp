@@ -22,6 +22,9 @@ std::vector<TkWord> tktable;
 void section_realloc(Section * sec, int new_size);
 int coffsym_search(Section * symtab, char * name);
 char * coffstr_add(Section * strtab, char * name);
+void coffreloc_redirect_add(int offset, int cfsym, char section, char type);
+
+
 /***********************************************************
  *  功能:             新建节
  *  name:             节名称
@@ -143,14 +146,14 @@ int coffsym_add(Section * symtab, char * name, int val, int sec_index,
 	{
 		cfsym = (CoffSym *)section_ptr_add(symtab, sizeof(CoffSym));
 		csname = coffstr_add(strtab, name);
-		cfsym->Name = csname - strtab->data;   // ????
-		cfsym->Value = val;
+		cfsym->name = csname - strtab->data;   // ????
+		cfsym->value = val;
 		cfsym->shortSection = sec_index;
-		cfsym->Type = type;
-		cfsym->StorageClass = StorageClass;
-		cfsym->Value = val;
+		cfsym->type = type;
+		cfsym->storageClass = StorageClass;
+		cfsym->value = val;
 		keyno = elf_hash(name);
-		cfsym->Next = hashtab[keyno];
+		cfsym->next = hashtab[keyno];
 
 		cs = cfsym - (CoffSym *)symtab->data;
 		hashtab[keyno] = cs;
@@ -179,7 +182,7 @@ void coffsym_add_update(Symbol *s, int val, int sec_index,
 	else
 	{
 		cfsym = &((CoffSym *)sec_symtab->data)[s->c];
-		cfsym->Value = val;
+		cfsym->value = val;
 		cfsym->shortSection = sec_index;
 	}
 }
@@ -219,12 +222,23 @@ char * coffstr_add(Section * strtab, char * name)
  **********************************************************/
 int coffsym_search(Section * symtab, char * name)
 {
+	CoffSym * cfsym;
+	int cs, keyno ;
+	char * csname ;
+	Section * strtab;
 	
-
-	return 1;
+	keyno  = elf_hash(name);
+	strtab = symtab->link;
+	cs     = symtab->hashtab[keyno];
+	while(cs)
+	{
+		cfsym  = (CoffSym *)symtab->data + cs;
+		csname = strtab->data + cfsym->name;
+		if(!strcmp(name, csname))
+			return cs;
+		cs = cfsym->next;
+	}
 }
-
-
 
 /***********************************************************
  *  功能:            增加重定位条目
@@ -233,13 +247,18 @@ int coffsym_search(Section * symtab, char * name)
  *  offset:          需要进行重定位的代码或数据在其相应节的偏移位置
  *  type:            重定位类型
  **********************************************************/
-
-
-
-
-
-
-
+void coffreloc_add(Section * sec, Symbol * sym, int offset, char type)
+{
+	int cfsym;
+	char * name;
+	if(!sym->c)
+		coffsym_add_update(sym, 0, 
+			IMAGE_SYM_UNDEFINED, 0,  // CST_FUNC,
+			IMAGE_SYM_CLASS_EXTERNAL);
+	name = ((TkWord)tktable[sym->v]).spelling;
+	cfsym = coffsym_search(sec_symtab, name);
+	coffreloc_redirect_add(offset, cfsym, sec->index, type);
+}
 
 /***********************************************************
  * 功能:            增加COFF重定位信息
@@ -248,42 +267,89 @@ int coffsym_search(Section * symtab, char * name)
  * section:         符号所在节
  * type:            重定位类型
  **********************************************************/
-
-
-
-
-
-
+void coffreloc_redirect_add(int offset, int cfsym, char section, char type)
+{
+	CoffReloc * rel;
+	rel = (CoffReloc *)section_ptr_add(sec_rel, sizeof(CoffReloc));
+	rel->offset  = offset;
+	rel->cfsym   = cfsym;
+	rel->section = section;
+	rel->type    = type;
+}
 
 /***********************************************************
  * *功能:            COFF初始化
  * *本函数用到全局变量:            
- * Dyn Array sections；   //节数组
- * Section*sec_text，     //代码节
- * *sec_data，            //数据节
- * *sec_bss，             //未初始化数据节
- * *sec_i data，          //导人表节
- * *sec_r data，          //只读数据节
- * *sec_rel，             //重定位信息节
- * *sec_symtab，          //符号表节
- * *sec_dynsym tab；      //链接库符号节
- * in tn sec_image；      //映像文件节个数
+ * Dyn Array sections；       //节数组
+ * Section*sec_text，         //代码节
+ *         *sec_data，        //数据节
+ *         *sec_bss，         //未初始化数据节
+ *         *sec_idata，       //导人表节
+ *         *sec_rdata，       //只读数据节
+ *         *sec_rel，         //重定位信息节
+ *         *sec_symtab，      //符号表节
+ *         *sec_dynsym tab；  //链接库符号节
+ * in tn sec_image；          //映像文件节个数
  **********************************************************/
+void init_coff()
+{
+	vecSection.resize(8);
+	nsec_image = 0 ;
+	
+	sec_text = section_new(".text",
+			IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_CNT_CODE);
+	sec_data = section_new(".data",
+			IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE | 
+	        IMAGE_SCN_CNT_INITIALIZED_DATA);    
+	sec_idata = section_new(".idata",
+			IMAGE_SCN_MEM_READ | IMAGE_SCN_CNT_INITIALIZED_DATA);  
+	sec_rdata = section_new(".rdata",
+			IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE | 
+	        IMAGE_SCN_CNT_INITIALIZED_DATA);  
+	sec_bss = section_new(".bss",
+			IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE | 
+	        IMAGE_SCN_CNT_INITIALIZED_DATA);     
+	sec_rel = section_new(".rel",
+			IMAGE_SCN_LNK_REMOVE | IMAGE_SCN_MEM_READ);   
+			
+	sec_symtab = new_coffsym_section(".symtab",
+			IMAGE_SCN_LNK_REMOVE | IMAGE_SCN_MEM_READ, ".strtab");  
+	sec_dynsymtab = new_coffsym_section(".dynsym",
+			IMAGE_SCN_LNK_REMOVE | IMAGE_SCN_MEM_READ, ".dynstr");
 
+	coffsym_add(sec_symtab, "", 0, 0, 0, IMAGE_SYM_CLASS_NULL);
+	coffsym_add(sec_symtab, ".data", 0, sec_data->index, 0, IMAGE_SYM_CLASS_STATIC);
+	coffsym_add(sec_symtab, ".bss", 0, sec_bss->index, 0, IMAGE_SYM_CLASS_STATIC);
+	coffsym_add(sec_symtab, ".rdata", 0, sec_rdata->index, 0, IMAGE_SYM_CLASS_STATIC);
+	coffsym_add(sec_dynsymtab, "", 0, 0, 0, IMAGE_SYM_CLASS_NULL);
+}
 
 /***********************************************************
  *  功能:            释放所有节数据
  **********************************************************/
-
-
+void free_section()
+{
+	int i;
+	Section * sec;
+	for(i = 0; i < vecSection.size(); i++)
+	{
+		sec = &((Section)vecSection[i]);
+		if(sec->hashtab != NULL)
+			free(sec->hashtab);
+		free(sec->data);
+	}
+}
 
 /***********************************************************
  * 功能:            输出目标文件
  * name:            目标文件名
  **********************************************************/
-
-
-
+void write_obj(char * name)
+{
+	int file_offset;
+	FILE * fout = fopen(name, "wb");
+	int i, sh_size, nsec_obj = 0;
+}
 
 /***********************************************************
  * 功能:            从当前读写位置到new_pos位置用0填补文件内容
