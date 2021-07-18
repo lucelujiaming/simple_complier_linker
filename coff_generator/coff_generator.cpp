@@ -238,6 +238,7 @@ int coffsym_search(Section * symtab, char * name)
 			return cs;
 		cs = cfsym->next;
 	}
+	return cs;
 }
 
 /***********************************************************
@@ -340,6 +341,15 @@ void free_section()
 	}
 }
 
+void fpad(FILE * fp, int new_pos)
+{
+	int curpos = ftell(fp);
+	while (++curpos <= new_pos)
+	{
+		fputc(0, fp);
+	}
+}
+
 /***********************************************************
  * 功能:            输出目标文件
  * name:            目标文件名
@@ -349,6 +359,38 @@ void write_obj(char * name)
 	int file_offset;
 	FILE * fout = fopen(name, "wb");
 	int i, sh_size, nsec_obj = 0;
+	IMAGE_FILE_HEADER *fh;
+	
+	nsec_obj = vecSection.size() -2 ;
+	sh_size  = sizeof(IMAGE_SECTION_HEADER);
+	file_offset = sizeof(IMAGE_FILE_HEADER) + nsec_obj * sh_size;
+	fpad(fout, file_offset);
+	fh = (IMAGE_FILE_HEADER *)malloc(sizeof(IMAGE_FILE_HEADER));
+	// Write File Sections
+	for(i = 0; i < nsec_obj; i++)
+	{
+		Section * sec = &vecSection[i];
+		if(sec->data == NULL)
+			continue;
+		fwrite(sec->data, 1, sec->data_offset, fout);
+		sec->sh.PointerToRawData = file_offset;
+		sec->sh.SizeOfRawData = sec->data_offset;
+		file_offset += sec->data_offset;
+	}
+	fseek(fout, SEEK_SET, 0);
+	// Write File Header
+	fh->Machine = IMAGE_FILE_MACHINE_I386;
+	fh->NumberOfSections = nsec_obj;
+	fh->PointerToSymbolTable = sec_symtab->sh.PointerToRawData;
+	fh->NumberOfSymbols = sec_symtab->sh.SizeOfRawData / sizeof(CoffSym);
+	fwrite(fh, 1, sizeof(IMAGE_FILE_HEADER), fout);
+	for (i =0; i < nsec_obj; i++)
+	{
+		Section * sec = &vecSection[i];
+		fwrite(sec->sh.Name, 1, sh_size, fout);
+	}
+	free(fh);
+	fclose(fout);
 }
 
 /***********************************************************
