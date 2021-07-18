@@ -1,9 +1,9 @@
-#include "get_token.h"
 #include <windows.h>
 #pragma warning(disable : 4786)
 #include<ctype.h>
 #include <vector>
 #include <string>
+#include "symbol_table.h"
 
 #define PROG_SIZE 40960
 
@@ -16,7 +16,9 @@ enum string_output_status{
 };
 
 std::vector<std::string> tk_hashtable;
-std::vector<std::string> tktable;
+//std::vector<std::string> tktable;
+// Change it in this version until we know the meaning of Symbol
+std::vector<TkWord> tktable;
 char token[256];
 std::string source_str; 
 
@@ -29,7 +31,7 @@ int lineNum;
 
 struct commands { /* keyword lookup table */
   char command[20];
-  char tok;
+  e_TokenCode tok;
 };
 
 static struct commands token_table[] = {
@@ -84,7 +86,7 @@ static struct commands token_table[] = {
     "__cdecl",       KW_CDECL,		// __cdecl关键字 standard c call
 	"__stdcall",     KW_STDCALL,    // __stdcall关键字 pascal c call
 	"include",       TK_INCLUDE,
-    "", 0  /* mark end of table */
+    "", TK_TOKENCODE_END  /* mark end of table */
 	/* 标识符 */
 	// TK_IDENT
 };
@@ -133,14 +135,17 @@ int load_program(char *p, char *pname)
 void parse_ctype_comment()
 {
 	do {
-		if(program_buffer[0] == '\n' || program_buffer[0] == '*'
-			|| program_buffer[0] == '\0')
-			break;
-		else
-		{
-			color_single_char(LEX_NORMAL, TK_COMMENT, *program_buffer);
-			program_buffer++;
-		}
+		// read until meet <ENTER> / <STAR> / <END>
+		do{
+			if(program_buffer[0] == '\n' || program_buffer[0] == '*'
+				|| program_buffer[0] == '\0')
+				break;
+			else
+			{
+				color_single_char(LEX_NORMAL, TK_COMMENT, *program_buffer);
+				program_buffer++;
+			}
+		} while (1);
 
 		if(program_buffer[0] == '\n')
 		{
@@ -266,6 +271,77 @@ void output_comment_eol()
   }
 }
 
+void parse_string(char sep)
+{
+	register char *temp;
+	char c;
+	temp=token;
+
+	*temp++ = *(program_buffer)++;
+	for (;;)
+	{
+		if(program_buffer[0] == sep)
+		{
+			*temp++ = program_buffer[0];
+			program_buffer++;
+			break;
+		}
+		else if (program_buffer[0] == '\\')
+		{
+			*temp++ = program_buffer[0];
+			program_buffer++;
+			switch(program_buffer[0]) {
+			case '0':
+				c = '\0';
+				break;
+			case 'a':
+				c = '\a';
+				break;
+			case 'b':
+				c = '\b';
+				break;
+			case 't':
+				c = '\t';
+				break;
+			case 'n':
+				c = '\n';
+				break;
+			case 'v':
+				c = '\v';
+				break;
+			case 'f':
+				c = '\f';
+				break;
+			case 'r':
+				c = '\r';
+				break;
+			case '\"':
+				c = '\"';
+				break;
+			case '\'':
+				c = '\'';
+				break;
+			case '\\':
+				c = '\\';
+				break;
+			default:
+				c = program_buffer[0];
+				if (c >= '!' && c <= '~')
+				{
+					printf("Illegal char");
+				}
+			}
+			// *temp++ = c;
+			*temp++ = program_buffer[0];
+			program_buffer++;
+		}
+		else
+		{
+			*temp++ = *(program_buffer)++;
+		}
+	}
+}
+
 /* Get a token. */
 int get_token()
 {	
@@ -277,13 +353,16 @@ int get_token()
 	preprocess();
 
 	if(*program_buffer == '\0')
+	{
 		return (token_type = TK_EOF);
+	}
 	
 	if(*program_buffer=='#') {
 		// find_eol();
 		*temp++=*(program_buffer)++;
 		// token[0]='\r'; token[1]='\n'; token[2]=0;
 		// return (objThreadCntrolBlock->token_type = DELIMITER);
+		syntax_indent();
 		return (token_type = TK_INCLUDE);
 	}
 
@@ -335,19 +414,28 @@ int get_token()
 		{
 			string_output_status();
 			*temp=*program_buffer;
-			program_buffer++;
+			parse_string(program_buffer[0]);   // End char is same with the start char.
+			syntax_indent();
+			return (token_type = TK_CSTR);
 		}
 		else
 		{
 			*temp=*program_buffer;
 			program_buffer++; /* advance to next position */
+			token_type = look_up(token); /* convert to internal rep */
+			if(token_type == -1)
+			{
+				syntax_indent();
+				return token_type;
+			}
 		}
 		// lookup the token type by temp 2021/0627
 		temp++;
 		*temp=0;
 		token_type = look_up(token); /* convert to internal rep */
 		if(token_type == -1)
-			token_type=TK_CCHAR;
+			token_type=TK_IDENT;
+		syntax_indent();
 		return token_type;
 	}
 
@@ -355,23 +443,26 @@ int get_token()
   if(isdigit(*(program_buffer))) { /* number */
     while(!isdelim(*(program_buffer))) *temp++=*(program_buffer)++;
     *temp = '\0';
+	syntax_indent();
     return(token_type = TK_CINT);
   }
 
   if(isalpha(*(program_buffer))) { /* var or command */
     while(!isdelim(*(program_buffer))) 
 		*temp++=*(program_buffer)++;
-    token_type=TK_CSTR;
+    token_type=TK_IDENT;
   }
 
   *temp = '\0';
 
   /* see if a string is a command or a variable */
-  if(token_type==TK_CSTR) {
+  if(token_type==TK_IDENT) {
     token_type = look_up(token); /* convert to internal rep */
 	if(token_type == -1)
-		token_type=TK_CSTR;
+		token_type=TK_IDENT;
   }
+  
+  syntax_indent();
   return token_type;
 }
 
@@ -417,9 +508,13 @@ void color_token(int lex_state, int tokenType, char * printStr)
 		if(string_output_status_indicator != STRING_OUTPUT_NONE)
 		{
 			SetConsoleTextAttribute(handle, FOREGROUND_BLUE | FOREGROUND_RED);
-			string_output_status_tailoperation();
+			printf("%s", printStr);
+			string_output_status_indicator = STRING_OUTPUT_NONE;
 		}
-		printf("%s", printStr);
+		else
+		{
+			printf("%s", printStr);
+		}
 		break;
 	case LEX_SEP:
 		printf("%c", *printStr);
@@ -446,7 +541,8 @@ void token_init(char * strFilename)
 	// init_lex();
 	for (int i = 0 ; i < sizeof(token_table) / sizeof(struct commands) ; i++)
 	{
-		tktable.push_back(token_table[i].command);
+		// tktable.push_back(token_table[i].command);
+		push_token(token_table[i].command, token_table[i].tok);
 	}
 }
 
@@ -454,17 +550,21 @@ void token_cleanup()
 {
 	int i = 0 ;
 	printf("\ntoken table has %d tokens", tktable.size());
-	for(i = 0; i < tktable.size(); i++)
-	{
-		printf("tktable[%d] = %s \n", i, tktable[i].c_str());
-	}
+//	for(i = 0; i < tktable.size(); i++)
+//	{
+//		printf("tktable[%d] = %s \n", i, tktable[i].c_str());
+//	}
 //	free(tktable.data);
 }
 
-void push_token(char * strNewToken)
+void push_token(char * strNewToken, e_TokenCode tokenCode)
 {
-	if(token_type == TK_CSTR)
-			tktable.push_back(std::string(strNewToken));
+//	if(token_type == TK_CSTR)
+//			tktable.push_back(std::string(strNewToken));
+	TkWord tkWord;
+	tkWord.spelling = strNewToken;
+	tkWord.tkcode = tokenCode;
+	tktable.push_back(tkWord);
 }
 
 char * get_current_token()

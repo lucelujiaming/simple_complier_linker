@@ -1,6 +1,8 @@
 #ifndef TRANSLATION_UNIT_H
 #define TRANSLATION_UNIT_H
 
+#include "get_token.h"
+
 /*******************************grammar.h begin****************************/
 /* 语法状态 */
 enum e_SynTaxState
@@ -42,5 +44,6 @@ enum e_TypeCode
 	T_BTYPE  =  0x000f,		// 基本类型掩码          
 	T_ARRAY  =  0x0010,		// 数组
 };
+
 
 #endif
