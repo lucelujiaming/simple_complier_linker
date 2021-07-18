@@ -2,12 +2,13 @@
 //
 
 #include<stdio.h>
-#include "translation_unit.h"
+#include<stdlib.h>
+#include "symbol_table.h"
 
 e_SynTaxState syntax_state = SNTX_NUL;
 int syntax_level;
 
-int type_specifier();
+int type_specifier(Type * type);
 void declarator();
 void direct_declarator();
 void direct_declarator_postfix();
@@ -31,6 +32,7 @@ void external_declaration(e_StorageClass iSaveType);
 void print_error(char * strErrInfo)
 {
 	printf("<ERROR> %s", strErrInfo);
+	exit(1);
 }
 
 void print_tab(int nTimes)
@@ -183,10 +185,11 @@ void direct_declarator_postfix()
 /*   {<TK_COMMA><type_specifier>{<declarator>} } <TK_COMMA><TK_ELLIPSIS>  */
 void parameter_type_list() // (int func_call)
 {
+	Type typeCurrent ;
 	get_token();
 	while(get_current_token_type() != TK_CLOSEPA)   // get_token until meet ) ”“‘≤¿®∫≈
 	{
-		if(!type_specifier())
+		if(!type_specifier(&typeCurrent))
 		{
 			print_error("Invalid type_specifier\n");
 		}
@@ -599,9 +602,10 @@ void unary_expression()
  **********************************************************/
 void sizeof_expression()
 {
+	Type typeCurrent ;
 	get_token();
 	skip_token(TK_OPENPA);
-	type_specifier();
+	type_specifier(&typeCurrent);
 	skip_token(TK_CLOSEPA);
 }
 
@@ -703,7 +707,8 @@ void argument_expression_list()
  ***********************************************************************/
 void struct_declaration(int * max, int * offset)
 {
-	type_specifier();
+	Type typeCurrent ;
+	type_specifier(&typeCurrent);
 	while (1)
 	{
 		declarator();
@@ -717,23 +722,40 @@ void struct_declaration(int * max, int * offset)
 	skip_token(TK_SEMICOLON);
 }
 
+int calc_align(int n , int align)
+{
+	return (n + align -1) & (~(align -1));
+}
+
 /************************************************************************/
 /*  <struct_declaration_list> ::= <struct_declaration>                  */
 /*                               {<struct_declaration>}                 */
 /************************************************************************/
-void struct_declaration_list()
+void struct_declaration_list(Type * type)
 {
 	int maxalign, offset;
-	syntax_state = SNTX_LF_HT;
-	syntax_level++;
-
+	// syntax_state = SNTX_LF_HT;
+	// syntax_level++;
+	Symbol *s, **ps;
 	get_token();
+	// Adding Symbol operation
+	s = type->ref;
+	if (s->c != -1)
+	{
+		print_error("Has defined");
+	}
+	maxalign = 1;
+	ps = &s->next;
+	offset = 0 ;
+	// end of Adding Symbol operation
 	while (get_current_token_type() != TK_END)  // } ”“¥Û¿®∫≈
 	{
 		struct_declaration(&maxalign, &offset);
 	}
 	skip_token(TK_END);
-	syntax_state = SNTX_LF_HT;
+	// syntax_state = SNTX_LF_HT;
+	s->c = calc_align(offset, maxalign);
+	s->r = maxalign;
 }
 
 /************************************************************************/
@@ -741,9 +763,12 @@ void struct_declaration_list()
 /*                         <struct_declaration_list><TK_END>            */
 /*                       | <KW_STRUCT><IDENTIFIER>                      */
 /************************************************************************/
-void struct_specifier()
+void struct_specifier(Type * type)
 {
 	int v ;
+	Symbol * s;
+	Type typeOne;
+	
 	get_token();		// Get struct name <IDENTIFIER>
 	v = get_current_token_type();
 	syntax_state = SNTX_DELAY;
@@ -762,10 +787,20 @@ void struct_specifier()
 	{
 		print_error("Need struct name\n");
 	}
-
+	// Adding Symbol operation
+	s = struct_search(v);
+	if (!s)
+	{
+		typeOne.t = T_STRUCT;
+		s = sym_push(v | SC_STRUCT, &typeOne, 0, -1);
+		s->r = 0;
+	}
+	type->t = T_STRUCT;
+	type->ref = s;
+	// end of Adding Symbol operation
 	if (get_current_token_type() == TK_BEGIN)
 	{
-		struct_declaration_list();
+		struct_declaration_list(type);
 	}
 }
 
@@ -773,26 +808,49 @@ void struct_specifier()
 /* <type_specifier> ::= <KW_CHAR> | <KW_SHORT>                          */
 /*                    | <KW_VOID> | <KW_INT> | <struct_specifier>       */
 /************************************************************************/
-int type_specifier()
+int type_specifier(Type * type)
 {
+	e_TypeCode t;
 	int type_found = 0 ;
+	Type typeStruct;
+	t = T_INT ;
+	
 	switch(get_current_token_type()) {
 	case KW_CHAR:    // All of simple_type
+		t = T_CHAR;
+		// syntax_state = SNTX_SP;
+		type_found = 1;
+		get_token();
+		break;
 	case KW_SHORT:
+		t = T_SHORT;
+		// syntax_state = SNTX_SP;
+		type_found = 1;
+		get_token();
+		break;
 	case KW_VOID:
+		t = T_VOID;
+		// syntax_state = SNTX_SP;
+		type_found = 1;
+		get_token();
+		break;
 	case KW_INT:
-		syntax_state = SNTX_SP;
+		t = T_INT;
+		// syntax_state = SNTX_SP;
 		type_found = 1;
 		get_token();
 		break;
 	case KW_STRUCT:
-		syntax_state = SNTX_SP;
+		t = T_STRUCT;
+		// syntax_state = SNTX_SP;
 		type_found = 1;
-		struct_specifier();
+		struct_specifier(&typeStruct);
+		type->ref = typeStruct.ref;
 		break;
 	default:
 		break;
 	}
+	type->t = t;
 	return type_found ;
 }
 
@@ -806,7 +864,8 @@ void function_body()
 /************************************************************************/
 void external_declaration(e_StorageClass iSaveType)
 {
-	if (!type_specifier())
+	Type typeCurrent ;
+	if (!type_specifier(&typeCurrent))
 	{
 		print_error("Need type token\n");
 	}

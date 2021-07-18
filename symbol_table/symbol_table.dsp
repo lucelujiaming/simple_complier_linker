@@ -105,6 +105,19 @@ SOURCE=.\StdAfx.cpp
 
 SOURCE=.\symbol_table.cpp
 # End Source File
+# Begin Source File
+
+SOURCE=.\translation_unit.cpp
+
+!IF  "$(CFG)" == "symbol_table - Win32 Release"
+
+!ELSEIF  "$(CFG)" == "symbol_table - Win32 Debug"
+
+# SUBTRACT CPP /YX /Yc /Yu
+
+!ENDIF 
+
+# End Source File
 # End Group
 # Begin Group "Header Files"
 

@@ -3,10 +3,8 @@
 #include <stdio.h>
 #include "translation_unit.h"
 
-
-
 /* 类型存储结构定义 */
-typedef struct Type 
+typedef struct structType
 {
     e_TypeCode t;
     struct Symbol *ref;
@@ -36,7 +34,7 @@ typedef struct TkWord
 Symbol * struct_search(int v);
 Symbol * sym_search(int v);
 
-
+Symbol * sym_push(int v, Type * type, int r, int c);
 
 
 
