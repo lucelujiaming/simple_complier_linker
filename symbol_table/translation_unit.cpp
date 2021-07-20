@@ -10,9 +10,9 @@ int syntax_level;
 
 int type_specifier(Type * type);
 void declarator();
-void direct_declarator();
-void direct_declarator_postfix();
-void parameter_type_list(); // (int func_call);
+void direct_declarator(Type * type, int * v, int func_call);
+void direct_declarator_postfix(Type * type, int func_call);
+void parameter_type_list(Type * type, int func_call); // (int func_call);
 
 void compound_statement();
 void if_statement();
@@ -28,6 +28,8 @@ void equality_expression();
 void relational_expression();
 
 void external_declaration(e_StorageClass iSaveType);
+
+int calc_align(int n , int align);
 
 void print_error(char * strErrInfo)
 {
@@ -91,8 +93,9 @@ void function_calling_convention(int *fc)
 /* <struct_member_alignment> ::= <KW_ALIGN><TK_OPENPA><TK_INT><TK_CLOSEPA> */
 /* Such as __align(4)                                                        */ 
 /*   "__align",       KW_ALIGN,		// __align关键字	                   */
-void struct_member_alignment() // (int *fc)
+void struct_member_alignment(int * force_align) // (int *fc)
 {
+	int align = 1;  // Default value of __align is one.
 	// Do not need indent or not
 	if(get_current_token_type() == KW_ALIGN)
 	{
@@ -101,43 +104,69 @@ void struct_member_alignment() // (int *fc)
 		if(get_current_token_type() == TK_CINT)
 		{
 			get_token();
+			// ex. : Get 4 for __align(4)
+			align = atoi(get_current_token());  // as a TK_CINT
 		}
 		else
 		{
 			print_error("Need intergat\n");
 		}
 		// *fc = token;
-		skip_token(TK_CLOSEPA);
+		skip_token(TK_CLOSEPA); 
+		// Calculate and set force_align.
+		if(align !=1 && align !=2 && align !=4)
+			align = 1;  // Only support 1, 2, 4.
+		align |= ALIGN_SET;
+		*force_align = align;
 	}
+	else
+		*force_align = 1; // Default is one.
+}
+
+/*********************************************************** 
+ * 功能:	生成指针类型
+ * t:		原数据类型
+ **********************************************************/
+void mk_pointer(Type *t)
+{
+	Symbol *s;
+    s = sym_push(SC_ANOM, t, 0, -1);
+    t->t = T_PTR ;
+    t->ref = s;
 }
 
 /* <declarator> ::= {<TK_STAR>}[<function_calling_convention>]               */
 /*                    [<struct_member_alignment>]<direct_declarator>         */
 /* Such as * __cdecl __align(4) function(int a, int b)                       */ 
-void declarator()
+void declarator(Type * type, int * v, int * force_align)
 {
 	int fc ;
 	while(get_current_token_type() == TK_STAR)		// * 星号
 	{
+		mk_pointer(type);
 		get_token();
 	}
 	function_calling_convention(&fc);
-	struct_member_alignment();  // &fc
-	direct_declarator();
+	if(force_align)
+	{
+		struct_member_alignment(force_align);  // &fc
+	}
+	direct_declarator(type, v, fc);
 }
 
 /* <direct_declarator> ::= <IDENTIFIER><direct_declarator_postfix>              */
-void direct_declarator()   // Not support argv[] usage
+void direct_declarator(Type * type, int * v, int func_call)   // Not support argv[] usage
 {
 	if(get_current_token_type() >= TK_IDENT)  // 函数名或者是变量名，不可以是保留关键字。 
 	{
+		*v = get_current_token_type();
 		get_token();
 	}
 	else
 	{
 		print_error("direct_declarator can not be TK_IDENT\n");
 	}
-	direct_declarator_postfix();
+	direct_declarator_postfix(type, func_call);
 }
 
 /* <direct_declarator_postfix> :: = {<TK_OPENBR><TK_CINT><TK_CLOSEBR>       (1)  */
@@ -145,27 +174,33 @@ void direct_declarator()   // Not support argv[] usage
 /*                         | <TK_OPENPA><parameter_type_list><TK_CLOSEPA>， (3)  */
 /*                         | <TK_OPENPA><TK_CLOSEPA>}                       (4)  */
 /* Such as var, var[5], var(), var(int a, int b), var[]                          */ 
-void direct_declarator_postfix()
+void direct_declarator_postfix(Type * type, int func_call)
 {
-//	int n;
+	int n;
+	Symbol * s;
 	if(get_current_token_type() == TK_OPENPA)         // <TK_OPENPA><parameter_type_list><TK_CLOSEPA> | <TK_OPENPA><TK_CLOSEPA>
 	{
-		parameter_type_list();
+		parameter_type_list(type, func_call);
 	}
 	else if(get_current_token_type() == TK_OPENBR)   // <TK_OPENBR><TK_CINT><TK_CLOSEBR> | <TK_OPENBR><TK_CLOSEBR>
 	{
 		get_token();
+		n = -1;
 		if(get_current_token_type() == TK_CINT)
 		{
 			get_token();
 			// n = tkvalue;  // ??
+			n = atoi(get_current_token());  // as a TK_CINT
 		}
 		else
 		{
 			print_error("Need intergat\n");
 		}
 		skip_token(TK_CLOSEBR);
-		direct_declarator_postfix();    // Nesting calling
+		direct_declarator_postfix(type, func_call);    // Nesting calling
+		s = sym_push(SC_ANOM, type, 0, n);
+		type->t = T_ARRAY | T_PTR;
+		type->ref = s;
 	}
 }
 
@@ -183,7 +218,7 @@ void direct_declarator_postfix()
 /*  等价转换后文法：                                                      */
 /*  <parameter_type_list>::=<type_specifier>{<declarator>}                */
 /*   {<TK_COMMA><type_specifier>{<declarator>} } <TK_COMMA><TK_ELLIPSIS>  */
-void parameter_type_list() // (int func_call)
+void parameter_type_list(Type * type, int func_call) // (int func_call)
 {
 	Type typeCurrent ;
 	get_token();
@@ -705,13 +740,36 @@ void argument_expression_list()
  *	<type_specifier><declarator>{<TK_COMMA><declarator>}
  *	<TK_SEMICOLON>
  ***********************************************************************/
-void struct_declaration(int * max, int * offset)
+void struct_declaration(int * maxalign, int * offset, Symbol *** ps)
 {
-	Type typeCurrent ;
-	type_specifier(&typeCurrent);
+	int v, size, align;
+	Symbol * ss;
+	Type typeOne, bType ;
+	int force_align;
+	
+	type_specifier(&bType);
 	while (1)
 	{
-		declarator();
+		v = 0 ;
+		typeOne = bType;
+		declarator(&typeOne, &v, &force_align);
+		// Adding Symbol operation
+		size = type_size(&typeOne, &align);
+		if (force_align & ALIGN_SET)
+		{
+			align = force_align & ~ALIGN_SET;
+		}
+		*offset = calc_align(*offset, align);
+		if (align > *maxalign)
+		{
+			*maxalign = align;
+		}
+		ss = sym_push(v | SC_MEMBER, &typeOne, 0, *offset);
+		* offset = size;
+		** ps = ss;
+		*ps = &ss->next;
+		// end of Adding Symbol operation
+
 		if (get_current_token_type() == TK_SEMICOLON)
 		{
 			break;
@@ -750,7 +808,7 @@ void struct_declaration_list(Type * type)
 	// end of Adding Symbol operation
 	while (get_current_token_type() != TK_END)  // } 右大括号
 	{
-		struct_declaration(&maxalign, &offset);
+		struct_declaration(&maxalign, &offset, &ps);
 	}
 	skip_token(TK_END);
 	// syntax_state = SNTX_LF_HT;

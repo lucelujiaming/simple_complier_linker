@@ -45,5 +45,6 @@ enum e_TypeCode
 	T_ARRAY  =  0x0010,		// 数组
 };
 
+#define ALIGN_SET 0x100  // 强制对齐标志
 
 #endif

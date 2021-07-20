@@ -6,7 +6,8 @@
 /* 类型存储结构定义 */
 typedef struct structType
 {
-    e_TypeCode t;
+    // e_TypeCode t;
+	int    t;
     struct Symbol *ref;
 } Type;
 
