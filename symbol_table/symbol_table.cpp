@@ -19,7 +19,6 @@ extern int token_type;
  *  type：符号数据类型
  *  c：   符号关联值
  **********************************************************/
-
 Symbol * sym_direct_push(std::vector<Symbol> &ss, int v, Type * type, int c)
 {
 	Symbol s; //, *p;
@@ -72,9 +71,11 @@ Symbol * sym_push(int v, Type * type, int r, int c)
 }
 
 /***********************************************************
- *  功能：将函数符号放人全局符号表中
+ *  功能：将函数符号放入全局符号表中
  *  v：   符号编号
  *  type：符号数据类型
+ *  函数放入符号表使用func_sym_push函数，
+ *  这个函数保证函数符号都存放在全局符号栈， 
  **********************************************************/
 Symbol * func_sym_push(int v, Type * type)
 {
@@ -88,7 +89,10 @@ Symbol * func_sym_push(int v, Type * type)
 	return s;
 }
 
-
+/***********************************************************
+ *  变量放入符号表通过var_sym_put函数，
+ *  这个函数会根据变量是局部变量还是全局变量，放入相应的符号栈中。
+ **********************************************************/
 Symbol * var_sym_put(Type * type, int r, int v, int addr)
 {
 	Symbol *sym = NULL;
@@ -108,7 +112,7 @@ Symbol * var_sym_put(Type * type, int r, int v, int addr)
 }
 
 /***********************************************************
- *  功能：将节名称放人全局符号表
+ *  功能：将节名称放入全局符号表
  *  sec： 节名称
  *  c：   符号关联值
  **********************************************************/
@@ -179,8 +183,6 @@ Symbol * sym_search(int v)
 {
 	return tktable[v].sym_identifier;
 }
-
-
 
 int main(int argc, char* argv[])
 {

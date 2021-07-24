@@ -1,9 +1,10 @@
-#include <windows.h>
 #pragma warning(disable : 4786)
+#include "get_token.h"
+#include "symbol_table.h"
+#include <windows.h>
 #include<ctype.h>
 #include <vector>
 #include <string>
-#include "symbol_table.h"
 
 #define PROG_SIZE 40960
 
@@ -539,17 +540,16 @@ void token_init(char * strFilename)
 
 	lineNum = 1;
 	// init_lex();
-	for (int i = 0 ; i < sizeof(token_table) / sizeof(struct commands) ; i++)
-	{
-		// tktable.push_back(token_table[i].command);
-		push_token(token_table[i].command, token_table[i].tok);
-	}
+//	for (int i = 0 ; i < sizeof(token_table) / sizeof(struct commands) ; i++)
+//	{
+//		tktable.push_back(token_table[i].command);
+//	}
 }
 
 void token_cleanup()
 {
 	int i = 0 ;
-	printf("\ntoken table has %d tokens", tktable.size());
+//	printf("\ntoken table has %d tokens", tktable.size());
 //	for(i = 0; i < tktable.size(); i++)
 //	{
 //		printf("tktable[%d] = %s \n", i, tktable[i].c_str());

@@ -8,13 +8,20 @@
 e_SynTaxState syntax_state = SNTX_NUL;
 int syntax_level;
 
+extern std::vector<Symbol> global_sym_stack;  //全局符号栈
+extern std::vector<Symbol> local_sym_stack;   //局部符号栈
+
+Type char_pointer_type,		// 字符串指针				
+	 int_type,				// int类型
+	 default_func_type;		// 缺省函数类型
+
 int type_specifier(Type * type);
-void declarator();
+void declarator(Type * type, int * v, int * force_align);
 void direct_declarator(Type * type, int * v, int func_call);
 void direct_declarator_postfix(Type * type, int func_call);
 void parameter_type_list(Type * type, int func_call); // (int func_call);
 
-void compound_statement();
+void compound_statement(int * bsym, int * csym);
 void if_statement();
 void break_statement();
 void return_statement();
@@ -220,15 +227,24 @@ void direct_declarator_postfix(Type * type, int func_call)
 /*   {<TK_COMMA><type_specifier>{<declarator>} } <TK_COMMA><TK_ELLIPSIS>  */
 void parameter_type_list(Type * type, int func_call) // (int func_call)
 {
+	int n;
+	Symbol **plast, *s, *first;
 	Type typeCurrent ;
 	get_token();
+	first = NULL;
+	plast = &first;
+	
 	while(get_current_token_type() != TK_CLOSEPA)   // get_token until meet ) 右圆括号
 	{
 		if(!type_specifier(&typeCurrent))
 		{
 			print_error("Invalid type_specifier\n");
 		}
-		declarator();			// Translate one parameter declaration
+		declarator(&typeCurrent, &n, NULL);			// Translate one parameter declaration
+		s = sym_push(n|SC_PARAMS, &typeCurrent, 0, 0);
+		*plast = s;
+		plast  = &s->next;
+		
 		if(get_current_token_type() == TK_CLOSEPA) // We encounter the ) after one parameter
 		{
 			break;
@@ -244,11 +260,15 @@ void parameter_type_list(Type * type, int func_call) // (int func_call)
 	syntax_state = SNTX_DELAY;
 	skip_token(TK_COMMA);
 	if(get_current_token_type() == TK_BEGIN)            // func(int a) {
-
 		syntax_state = SNTX_LF_HT;
 	else                             // func(int a);
 		syntax_state = SNTX_NUL;
 	syntax_indent();
+	
+	s = sym_push(SC_ANOM, type, func_call, 0);
+	s->next = first;
+	type->t = T_FUNC;
+	type->ref = s;
 }
 
 // ------------------ func_body 
@@ -257,18 +277,27 @@ void parameter_type_list(Type * type, int func_call) // (int func_call)
  *  因为只要见到<{ 左大括号>就是复合语句，所以<复合语句>的概念比<函数体>概念要大，
  *  <函数体>属于一类比较特殊的<复合语句>。
  ***********************/
-void func_body()
+void func_body(Symbol * sym)
 {
-	compound_statement();
+	sym_direct_push(local_sym_stack, SC_ANOM, &int_type, 0);
+	compound_statement(NULL, NULL);
+	sym_pop(&local_sym_stack, NULL);
 }
 
 // 初值符的代码如下所示。
 /***********************************************************
 * <initializer> ::= <assignment_expression>
 *********************************************/
-void initializer()
+void initializer(Type * type)
 {
-	assignment_expression();
+	if(type->t & T_ARRAY)
+	{
+		get_token();
+	}
+	else
+	{
+		assignment_expression();
+	}
 }
 
 // ------------------ 语句：statement
@@ -290,7 +319,7 @@ void statement()
 	switch(get_current_token_type())
 	{
 	case TK_BEGIN:
-		compound_statement();			// 复合语句
+		compound_statement(NULL, NULL);			// 复合语句
 		break;
 	case KW_IF:
 		if_statement();
@@ -332,8 +361,12 @@ int is_type_specifier(int token_type)
 	return 0;
 }
 
-void compound_statement()
+void compound_statement(int * bsym, int * csym)
 {
+	Symbol *s;
+	s = &(local_sym_stack[0]);
+	local_sym_stack.erase(&local_sym_stack[0]);
+	
 	syntax_state = SNTX_LF_HT;
 	syntax_level++;
 
@@ -348,6 +381,7 @@ void compound_statement()
 		statement();
 	}
 	syntax_state = SNTX_LF_HT;
+	sym_pop(&local_sym_stack, s);
 	get_token();
 }
 
@@ -631,17 +665,59 @@ void unary_expression()
 	}
 }
 
+int type_size(Type * type, int * align);
 /***********************************************************
  *  <sizeof_expression> ::= 
  *     <KW_SIZEOF><TK_OPENPA><type_specifier><TK_CLOSEPA>
  **********************************************************/
 void sizeof_expression()
 {
+	int align, size;
 	Type typeCurrent ;
+	
 	get_token();
 	skip_token(TK_OPENPA);
 	type_specifier(&typeCurrent);
 	skip_token(TK_CLOSEPA);
+	
+	size = type_size(&typeCurrent, &align);
+	if(size < 0)
+		print_error("sizeof failed.");
+}
+
+int type_size(Type * type, int * align)
+{
+	Symbol *s;
+	int bt;
+	int PTR_SIZE = 4;
+	bt = type->t & T_BTYPE;
+	switch(bt)
+	{
+	case T_STRUCT:
+		s = type->ref;
+		*align = s->r;
+		return s->c ;
+	case T_PTR:
+		if(type->t & T_ARRAY)
+		{
+			s = type->ref;
+			return type_size(&s->type, align) * s->c;
+		}
+		else
+		{
+			*align = PTR_SIZE;
+			return PTR_SIZE;
+		}
+	case T_INT:
+		*align = 4;
+		return 4 ;
+	case T_SHORT:
+		*align = 2;
+		return 2 ;
+	default:			// char, void, fucntion
+		*align = 1;
+		return 1 ;
+	}
 }
 
 /***********************************************************
@@ -912,23 +988,20 @@ int type_specifier(Type * type)
 	return type_found ;
 }
 
-void function_body()
-{
-	compound_statement();
-}
-
 /************************************************************************/
 /*  iSaveType e_StorageClass  存储类型                                  */
 /************************************************************************/
 void external_declaration(e_StorageClass iSaveType)
 {
-	Type typeCurrent ;
-	if (!type_specifier(&typeCurrent))
+	Type bTypeCurrent, typeCurrent ;
+	int v, has_init, addr;
+	Symbol * sym;
+	if (!type_specifier(&bTypeCurrent))
 	{
 		print_error("Need type token\n");
 	}
 
-	if (get_current_token_type() == TK_SEMICOLON)
+	if (bTypeCurrent.t = T_STRUCT && get_current_token_type() == TK_SEMICOLON)
 	{
 		get_token();
 		return;
@@ -936,14 +1009,17 @@ void external_declaration(e_StorageClass iSaveType)
 
 	while (1)
 	{
-		declarator();
+		typeCurrent = bTypeCurrent;
+		declarator(&typeCurrent, &v, NULL);
+		// XXXXXXXXXXXXXXXXXXXXXXX
 		if (get_current_token_type() == TK_BEGIN)
 		{
 			if (iSaveType == SC_LOCAL)
 			{
 				print_error("Not nexsting function\n");
 			}
-			function_body();
+			
+			func_body(sym);
 			break;
 		}
 		else
@@ -951,7 +1027,7 @@ void external_declaration(e_StorageClass iSaveType)
 			if (get_current_token_type() == TK_ASSIGN)  // int a = 5 ;
 			{
 				get_token();
-				initializer();
+				initializer(&typeCurrent);
 			}
 			
 			if(get_current_token_type() ==TK_COMMA)  // int a, b ;
