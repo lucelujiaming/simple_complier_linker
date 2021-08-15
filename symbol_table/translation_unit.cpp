@@ -11,7 +11,7 @@ int syntax_level;
 extern std::vector<Symbol> global_sym_stack;  //全局符号栈
 extern std::vector<Symbol> local_sym_stack;   //局部符号栈
 
-Type char_pointer_type,		// 字符串指针				
+Type char_pointer_type,		// 字符串指针
 	 int_type,				// int类型
 	 default_func_type;		// 缺省函数类型
 
@@ -764,12 +764,20 @@ void postfix_expression()
  **********************************************************/
 void primary_expression()
 {
-	int t ;
+	int t , addr;
+	Type type;
+	Symbol *s ;
 	switch(get_current_token_type()) {
 	case TK_CINT:
 	case TK_CCHAR:
 	case TK_CSTR:
-		get_token();
+		// get_token();
+		t = T_CHAR;
+		type.t = t;
+		mk_pointer(&type);
+		type.t |= T_ARRAY;
+		var_sym_put(&type, SC_GLOBAL, 0, addr);
+		initializer(&type);
 		break;
 	case TK_OPENPA:
 		get_token();
@@ -782,6 +790,18 @@ void primary_expression()
 		if (t < TK_IDENT) // The problem of String at 07/11, We need the parse_string function
 		{
 			print_error("Need variable or constant\n");
+		}
+		s = sym_search(t);
+		if(!s)
+		{
+			if (get_current_token_type() != TK_OPENPA)
+			{
+				char testStr[128];
+				sprintf(testStr, "%s does not declare\n", get_current_token());
+				print_error(testStr);
+				s = func_sym_push(t, &default_func_type);
+				s->r = SC_GLOBAL | SC_SYM;
+			}
 		}
 		break;
 	}
@@ -994,7 +1014,7 @@ int type_specifier(Type * type)
 void external_declaration(e_StorageClass iSaveType)
 {
 	Type bTypeCurrent, typeCurrent ;
-	int v, has_init, addr;
+	int v; // , has_init, addr;
 	Symbol * sym;
 	if (!type_specifier(&bTypeCurrent))
 	{

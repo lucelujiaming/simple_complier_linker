@@ -13,6 +13,11 @@ std::vector<Symbol> local_sym_stack;   //局部符号栈
 
 extern std::vector<TkWord> tktable;
 extern int token_type;
+
+extern Type char_pointer_type,		// 字符串指针
+			 int_type,				// int类型
+			 default_func_type;		// 缺省函数类型
+
 /***********************************************************
  *  功能：将符号放在符号栈中
  *  v：   符号编号
@@ -184,8 +189,20 @@ Symbol * sym_search(int v)
 	return tktable[v].sym_identifier;
 }
 
+void mk_pointer(Type *t);
+void init()
+{
+//	sym_sec_rdata = sec_sym_put(".rdata", 0);
+	int_type.t = T_INT;
+	char_pointer_type.t = T_CHAR;
+	mk_pointer(&char_pointer_type);
+	default_func_type.t = T_FUNC;
+//	default_func_type.ref = 
+}
+
 int main(int argc, char* argv[])
 {
+	init();
 	token_init(argv[1]);
 	get_token();
 	translation_unit();
