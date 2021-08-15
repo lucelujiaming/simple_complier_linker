@@ -19,7 +19,6 @@ int nsec_image;				// 映像文件节个数
 
 std::vector<TkWord> tktable;
 
-void section_realloc(Section * sec, int new_size);
 int coffsym_search(Section * symtab, char * name);
 char * coffstr_add(Section * strtab, char * name);
 void coffreloc_redirect_add(int offset, int cfsym, char section, char type);

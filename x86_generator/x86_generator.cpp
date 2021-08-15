@@ -8,7 +8,7 @@
 
 #define OPERAND_STACK_SIZE    1024
 
-int ind = 0 ;
+int ind = 0 ;  // It should be the written offset of Section .
 std::vector<Operand> operand_stack;
 std::vector<Operand>::iterator operand_stack_top = NULL;
 std::vector<Operand>::iterator operand_stack_second = NULL;
@@ -31,6 +31,8 @@ void gen_opInteger(int op);
 void gen_opTwoInteger(int opc, int op);
 int pointed_size(Type * type);
 void spill_reg(char c);
+void spill_regs();
+void gen_call();
 /************************************************************************/
 /*  功能：操作数入栈                                                    */
 /*  type：操作数数据类型                                                */
@@ -110,11 +112,11 @@ void gen_byte(char c)
 {
 	int indNext;
 	indNext = ind + 1;
-//	if (indNext > sec_text->data_allocated)
-//	{
-//		section_realloc(sec_text, indNext);
-//	}
-//	sec_text->data[ind] = c;
+	if (indNext > sec_text->data_allocated)
+	{
+		section_realloc(sec_text, indNext);
+	}
+	sec_text->data[ind] = c;
 	ind = indNext;
 }
 
@@ -527,33 +529,146 @@ void gen_opTwoInteger(int opc, int op)
 }
 
 /************************************************************************/
+/* 功能：记录待定跳转地址的指令链                                       */
+/* s：前一跳转指令地址                                                  */
+/************************************************************************/
+int makelist(int s)
+{
+	int indOne;
+	indOne = ind + 4;
+	if (indOne > sec_text->data_allocated)
+	{
+		section_realloc(sec_text, indOne);
+	}
+	*(int *)(sec_text->data + ind) = s;
+	s = ind;
+	ind = indOne;
+	return s;
+}
+
+/************************************************************************/
+/* 功能：回填函数，把t为链首的各个待定跳转地址填人相对地址              */
+/* t：链首                                                              */
+/* a：指令跳转位置                                                      */
+/************************************************************************/
+void backpatch(int t, int a)
+{
+	int n, *ptr;
+	while (t)
+	{
+		ptr = (int *)(sec_text->data + t);
+		n = *ptr;
+		*ptr = a - t - 4;
+		t = n ;
+	}
+}
+
+/************************************************************************/
 /* 功能：生成向高地址跳转指令，跳转地址待定                             */
 /* t：前一跳转指令地址                                                  */
+/* makelist本来代码在书的后面                                           */
 /************************************************************************/
-void gen_jmpforward(int t)
+int gen_jmpforward(int t)
 {
 	gen_opcodeOne(0xe9);
-//	return makelist();
+	return makelist(t);
 }
 
 /************************************************************************/
 /* 功能：生成向低地址跳转指令，跳转地址已确定                           */
 /* a：跳转到的目标地址                                                  */
 /************************************************************************/
-
+void gen_jmpbackward(int a)
+{
+	int r;
+	r = a - ind - 1;
+	if (r = (char)r)
+	{
+		gen_opcodeOne(0xeb);
+		gen_byte(r);
+	}
+	else
+	{
+		gen_opcodeOne(0xe9);
+		gen_dword(a - ind - 4);
+	}
+}
 
 /************************************************************************/
 /* 功能：生成条件跳转指令                                               */
 /* t：前一跳转指令地址                                                  */
 /* 返回值：新跳转指令地址                                               */
 /************************************************************************/
+int gen_jcc(int t)
+{
+	int v;
+	int inv = 1;
+	v = operand_stack_top->r & SC_VALMASK;
+	if (v == SC_CMP)
+	{
+		gen_opcodeTwo(0x0f, operand_stack_top->value ^ inv);
+		t = makelist(t);
+	}
+	else
+	{
+		if (operand_stack_top->r & (SC_VALMASK | SC_LVAL | SC_SYM) == SC_LOCAL)
+		{
+			t = gen_jmpforward(t);
+		}
+		else
+		{
+			v = load_one(REG_ANY, operand_stack_top);
+			gen_opcodeOne(0x85);
+			gen_modrm(ADDR_REG, v, v, NULL, 0);
 
+			gen_opcodeTwo(0x0f, 0x85 ^ inv);
+			t = makelist(t);
+		}
+	}
+	operand_pop();
+	return t;
+}
+
+/***********************************************************
+ * 功能:	调用完函数后恢复/释放栈,对于__cdecl
+ * val:		需要释放栈空间大小(以字节计)
+ **********************************************************/
+void gen_addsp(int val)
+{
+}
 
 /************************************************************************/
 /* 功能：生成函数调用代码， 先将参数人栈， 然后生成call指令             */
 /* nb_args：参数个数                                                    */
 /************************************************************************/
+void gen_invke(int nb_args)
+{
+	int size, r, args_size, i, func_call;
+	args_size = 0;
+	for (i = 0; i < nb_args; i++)
+	{
+		r = load_one(REG_ANY, operand_stack_top);
+		size =4;
+		
+		gen_opcodeOne(0x50 + r);
+		args_size += size;
+		operand_pop();
+	}
 
+	spill_regs();
+	func_call = operand_stack_top->type.ref->r;
+	gen_call();
+	if (args_size && func_call != KW_STDCALL)
+	{
+		gen_addsp(args_size);
+	}
+	operand_pop();
+}
+
+void gen_call()
+{
+
+}
 
 int pointed_size(Type * type)
 {
@@ -562,6 +677,10 @@ int pointed_size(Type * type)
 
 
 void spill_reg(char c)
+{
+}
+
+void spill_regs()
 {
 }
 

@@ -72,6 +72,7 @@ typedef struct CoffReloc
     BYTE  type;    
 } CoffReloc;
 
+void section_realloc(Section * sec, int new_size);
 void coffreloc_add(Section * sec, Symbol * sym, int offset, char type);
 
 #endif
