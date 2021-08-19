@@ -89,8 +89,20 @@ SOURCE=.\coff_generator.cpp
 # End Source File
 # Begin Source File
 
+SOURCE=.\get_token.cpp
+# End Source File
+# Begin Source File
+
 SOURCE=.\StdAfx.cpp
 # ADD CPP /Yc"stdafx.h"
+# End Source File
+# Begin Source File
+
+SOURCE=.\symbol_table.cpp
+# End Source File
+# Begin Source File
+
+SOURCE=.\translation_unit.cpp
 # End Source File
 # Begin Source File
 
@@ -103,6 +115,10 @@ SOURCE=.\x86_generator.cpp
 # Begin Source File
 
 SOURCE=.\coff_generator.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\get_token.h
 # End Source File
 # Begin Source File
 

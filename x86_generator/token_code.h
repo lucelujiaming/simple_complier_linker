@@ -58,7 +58,8 @@ enum e_TokenCode
 	TK_COMMENT,
 	/* ¿â°üº¬ */
 	TK_INCLUDE,
-    TK_COMMON
+    TK_COMMON,
+    TK_TOKENCODE_END
 };
 
 enum{

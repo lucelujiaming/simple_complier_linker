@@ -1,6 +1,7 @@
 #ifndef TRANSLATION_UNIT_H
 #define TRANSLATION_UNIT_H
 
+#include "coff_generator.h"
 
 /*******************************grammar.h begin****************************/
 /* 语法状态 */
@@ -46,4 +47,7 @@ enum e_TypeCode
 
 #define ALIGN_SET 0x100  // 强制对齐标志
 
+int type_size(Type * type, int * align);
+int calc_align(int n , int align);
+void mk_pointer(Type *t);
 #endif

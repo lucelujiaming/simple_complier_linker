@@ -8,6 +8,7 @@
 
 #define OPERAND_STACK_SIZE    1024
 
+int loc = 0 ; 
 int ind = 0 ;  // It should be the written offset of Section .
 std::vector<Operand> operand_stack;
 std::vector<Operand>::iterator operand_stack_top = NULL;
@@ -354,6 +355,24 @@ void store_one()
 	operand_pop();
 }
 
+/***********************************************************
+ * 功能:	返回t所指向的数据类型
+ * t:		指针类型
+ **********************************************************/
+Type *pointed_type(Type *t)
+{
+    return &t->ref->type;
+}
+
+/***********************************************************
+ * 功能:	返回t所指向的数据类型尺寸
+ * t:		指针类型
+ **********************************************************/
+int pointed_size(Type *t)
+{
+    int align;
+    return type_size(pointed_type(t), &align);
+}
 
 /************************************************************************/
 /* 功能：生成二元运算，对指针操作数进行一些特殊处理                     */
@@ -635,6 +654,21 @@ int gen_jcc(int t)
  **********************************************************/
 void gen_addsp(int val)
 {
+	int opc = 0;
+	if (val == (char)val) 
+	{
+		// ADD--Add	83 /0 ib	ADD r/m32,imm8	Add sign-extended imm8 from r/m32
+		gen_opcodeOne(0x83);	// ADD esp,val
+		gen_modrm(ADDR_REG,opc,REG_ESP,NULL,0);
+        gen_byte(val);
+    } 
+	else 
+	{
+		// ADD--Add	81 /0 id	ADD r/m32,imm32	Add sign-extended imm32 to r/m32
+		gen_opcodeOne(81);	// add esp, val
+		gen_modrm(ADDR_REG,opc,REG_ESP,NULL,0);
+		gen_dword(val);
+    }
 }
 
 /************************************************************************/
@@ -667,21 +701,104 @@ void gen_invke(int nb_args)
 
 void gen_call()
 {
-
+	int r;
+	if (operand_stack_top->r & (SC_VALMASK | SC_LVAL) == SC_GLOBAL)
+	{
+		coffreloc_add(sec_text, operand_stack_top->sym, ind + 1, IMAGE_REL_I386_REL32);
+		gen_opcodeOne(0xe8);
+		gen_dword(operand_stack_top->value - 4);
+	}
+	else
+	{
+		r = load_one(REG_ANY, operand_stack_top);
+		gen_opcodeOne(0xff);
+		gen_opcodeOne(0xd0 + r);
+	}
 }
 
-int pointed_size(Type * type)
+int allocate_reg(int rc)
 {
-	return 1;
+	int r;
+	std::vector<Operand>::iterator p;
+	int used;
+
+	for (r = 0; r < REG_EBX; r++)
+	{
+		if (rc & REG_ANY || r == rc) 
+		{
+			used = 0;
+			for (p = operand_stack.begin(); p != operand_stack_top; p++)
+			{
+				if ((p->r & SC_VALMASK) == r)
+				{
+					used = 1;
+				}
+			}
+			if (used == 0)
+			{
+				return r;
+			}
+		}
+	}
+	for (p = operand_stack.begin(); p != operand_stack_top; p++)
+	{
+		r = p->r & SC_VALMASK;
+		if (r < SC_GLOBAL && (rc & REG_ANY || r == rc))
+		{
+			spill_reg(r);
+			return r;
+		}
+	}
+	return -1;
 }
 
-
-void spill_reg(char c)
+void spill_reg(char r)
 {
+	int size, align;
+	std::vector<Operand>::iterator p;
+	Operand opd;
+	Type * type;
+
+	for (p = operand_stack.begin(); p != operand_stack_top; p++)
+	{
+		if ((p->r & SC_VALMASK) == r)
+		{
+			r = p->r & SC_VALMASK;
+			type = &p->type;
+			if (p->r & SC_LVAL)
+			{
+				type = &int_type;
+			}
+			size = type_size(type, &align);
+			loc = calc_align(loc - size, align);
+			operand_assign(&opd, type->t, SC_LOCAL | SC_LVAL, loc);
+			store(r, &opd);
+			if (p->r & SC_LVAL)
+			{
+				p->r = (p->r & ~(SC_VALMASK)) | SC_LLOCAL;
+			}
+			else
+			{
+				p->r = SC_LOCAL | SC_LVAL;
+			}
+			p->value = loc;
+			break;
+		}
+	}
 }
 
 void spill_regs()
 {
+	int r;
+	std::vector<Operand>::iterator p;
+	for (p = operand_stack.begin(); p != operand_stack_top; p++)
+	{
+		r = p->r & SC_VALMASK;
+		if (r < SC_GLOBAL)
+		{
+			spill_reg(r);
+		}
+	}
 }
 
 int main(int argc, char* argv[])

@@ -17,7 +17,7 @@ Section *sec_text,			// 代码节
 
 int nsec_image;				// 映像文件节个数
 
-std::vector<TkWord> tktable;
+extern std::vector<TkWord> tktable;
 
 int coffsym_search(Section * symtab, char * name);
 char * coffstr_add(Section * strtab, char * name);
