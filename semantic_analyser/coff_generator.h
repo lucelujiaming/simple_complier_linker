@@ -74,5 +74,6 @@ typedef struct CoffReloc
 
 void section_realloc(Section * sec, int new_size);
 void coffreloc_add(Section * sec, Symbol * sym, int offset, char type);
-
+void coffsym_add_update(Symbol *s, int val, int sec_index,
+		short type, char StorageClass);
 #endif

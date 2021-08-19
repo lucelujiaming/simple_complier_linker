@@ -6,16 +6,31 @@
 #include<stdlib.h>
 #include "get_token.h"
 #include "symbol_table.h"
+#include "x86_generator.h"
 
+extern int loc;
 e_SynTaxState syntax_state = SNTX_NUL;
 int syntax_level;
+
+extern Section *sec_text,	// 代码节
+		*sec_data,			// 数据节
+		*sec_bss,			// 未初始化数据节
+		*sec_idata,			// 导入表节
+		*sec_rdata,			// 只读数据节
+		*sec_rel,			// 重定位信息节
+		*sec_symtab,		// 符号表节	
+		*sec_dynsymtab;		// 链接库符号节
 
 extern std::vector<Symbol> global_sym_stack;  //全局符号栈
 extern std::vector<Symbol> local_sym_stack;   //局部符号栈
 
-Type char_pointer_type,		// 字符串指针
+extern Type char_pointer_type,		// 字符串指针
 	 int_type,				// int类型
 	 default_func_type;		// 缺省函数类型
+
+extern std::vector<Operand> operand_stack;
+extern std::vector<Operand>::iterator operand_stack_top;
+extern std::vector<Operand>::iterator operand_stack_second;
 
 int type_specifier(Type * type);
 void declarator(Type * type, int * v, int * force_align);
@@ -39,6 +54,9 @@ void relational_expression();
 void external_declaration(e_StorageClass iSaveType);
 
 int calc_align(int n , int align);
+
+Section * allocate_storage(Type * type, int r, int has_init, int v, int *addr);
+void init_variable(Type * type, Section * sec, int c, int v);
 
 void print_error(char * strErrInfo)
 {
@@ -290,16 +308,30 @@ void func_body(Symbol * sym)
 /***********************************************************
 * <initializer> ::= <assignment_expression>
 *********************************************/
-void initializer(Type * type)
+void initializer(Type * type, int c, Section * sec)
 {
 	if(type->t & T_ARRAY)
 	{
+		memcpy(sec->data + c, get_current_token(), strlen(get_current_token()));
 		get_token();
 	}
 	else
 	{
 		assignment_expression();
+		init_variable(type, sec, c, 0);
 	}
+}
+
+/************************************************************************/
+/* 功能：变量初始化                                                     */
+/* type：变量类型                                                       */
+/* sec：变量所在节                                                      */
+/* c：变量相关值                                                        */
+/* v：变量符号编号                                                      */
+/************************************************************************/
+void init_variable(Type * type, Section * sec, int c, int v)
+{
+
 }
 
 // ------------------ 语句：statement
@@ -766,9 +798,11 @@ void postfix_expression()
  **********************************************************/
 void primary_expression()
 {
-	int t , addr;
+	int t , r, addr;
 	Type type;
 	Symbol *s ;
+	Section * sec = NULL;
+	
 	switch(get_current_token_type()) {
 	case TK_CINT:
 	case TK_CCHAR:
@@ -779,7 +813,7 @@ void primary_expression()
 		mk_pointer(&type);
 		type.t |= T_ARRAY;
 		var_sym_put(&type, SC_GLOBAL, 0, addr);
-		initializer(&type);
+		initializer(&type, addr, sec);
 		break;
 	case TK_OPENPA:
 		get_token();
@@ -1011,13 +1045,15 @@ int type_specifier(Type * type)
 }
 
 /************************************************************************/
+/*  功能：解析外部声明                                                  */
 /*  iSaveType e_StorageClass  存储类型                                  */
 /************************************************************************/
 void external_declaration(e_StorageClass iSaveType)
 {
 	Type bTypeCurrent, typeCurrent ;
-	int v; // , has_init, addr;
+	int v, has_init, r, addr;
 	Symbol * sym;
+	Section * sec = NULL;
 	
 	if (!type_specifier(&bTypeCurrent))
 	{
@@ -1047,10 +1083,29 @@ void external_declaration(e_StorageClass iSaveType)
 		}
 		else
 		{
-			if (get_current_token_type() == TK_ASSIGN)  // int a = 5 ;
+			r = 0;
+			if (!(typeCurrent.t & T_ARRAY))
+			{
+				r |= SC_LVAL;
+			}
+			r |= 1;
+			// if (get_current_token_type() == TK_ASSIGN)
+			has_init = (get_current_token_type() == TK_ASSIGN);
+			if (has_init)  // int a = 5 ;
 			{
 				get_token();
-				initializer(&typeCurrent);
+			//	initializer(&typeCurrent);
+			}
+			sec = allocate_storage(&typeCurrent, r, has_init, v, &addr);
+			sym = var_sym_put(&typeCurrent, r, v, addr);
+			if (iSaveType == SC_GLOBAL)
+			{
+				coffsym_add_update(sym, addr, sec->index, 0, IMAGE_SYM_CLASS_EXTERNAL);
+			}
+
+			if (has_init)  // int a = 5 ;
+			{
+				initializer(&typeCurrent, addr, sec);
 			}
 			
 			if(get_current_token_type() ==TK_COMMA)  // int a, b ;
@@ -1065,6 +1120,70 @@ void external_declaration(e_StorageClass iSaveType)
 			}
 		}
 	}
+}
+
+/************************************************************************/
+/* 功能：分配存储空间                                                   */
+/* type：变量类型                                                       */
+/* r：变量存储类型                                                      */
+/* has_in it：是否需要进行初始化                                        */
+/* v：变量符号编号                                                      */
+/* addr(输出) ：变量存储地址                                            */
+/* 返回值：变量存储节                                                   */
+/************************************************************************/
+Section * allocate_storage(Type * type, int r, int has_init, int v, int *addr)
+{
+	int size, align;
+	Section * sec= NULL;
+	size = type_size(type, &align);
+
+	if (size < 0)
+	{
+		if (type->t & T_ARRAY 
+			&& type->ref->type.t == T_CHAR)
+		{
+			type->ref->c = strlen((char *)get_current_token()) + 1;
+			size = type_size(type, &align);
+		}
+		else
+			print_error("Unknown size of type");
+	}
+
+	if ((r & SC_VALMASK) == SC_LOCAL)
+	{
+		loc = calc_align(loc - size, align);
+		*addr = loc;
+	}
+	else
+	{
+		if (has_init == 1)
+		{
+			sec = sec_data;
+		}
+		else if (has_init == 2)
+		{
+			sec = sec_rdata;
+		}
+		else
+		{
+			sec = sec_bss;
+		}
+		sec->data_offset = calc_align(sec->data_offset, align);
+		*addr = sec->data_offset;
+		sec->data_offset += size;
+
+		if (sec->sh.Characteristics & IMAGE_SCN_CNT_INITIALIZED_DATA
+			&& sec->data_offset > sec->data_allocated)
+		{
+			section_realloc(sec, sec->data_offset);
+		}
+		if (v == 0)
+		{
+			operand_push(type, SC_GLOBAL | SC_SYM, *addr);
+		//	operand_stack_top->sym = sec_rdata;
+		}
+	}
+	return sec;
 }
 
 /************************************************************************/
