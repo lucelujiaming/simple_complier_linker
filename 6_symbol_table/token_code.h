@@ -1,7 +1,7 @@
 /* 单词编码 */
 enum e_TokenCode
 {  
-	/* 运算符及分隔符 */
+	/* 运算符及分隔符 1-25 */
 	TK_PLUS,		// + 加号
     TK_MINUS,		// - 减号
     TK_STAR,		// * 星号
@@ -28,12 +28,12 @@ enum e_TokenCode
 	TK_ELLIPSIS,	// ... 省略号
 	TK_EOF,			// 文件结束符
 
-    /* 常量 */
+    /* 常量 26-28 */
     TK_CINT,		// 整型常量
     TK_CCHAR,		// 字符常量
     TK_CSTR,		// 字符串常量
 
-	/* 关键字 */
+	/* 关键字 29-41 */
 	KW_CHAR,		// char关键字
 	KW_SHORT,		// short关键字
 	KW_INT,			// int关键字
@@ -48,6 +48,7 @@ enum e_TokenCode
     KW_RETURN,		// return关键字
     KW_SIZEOF,		// sizeof关键字
 
+	/* 关键字 42-44 */
     KW_ALIGN,		// __align关键字	
     KW_CDECL,		// __cdecl关键字 standard c call
 	KW_STDCALL,     // __stdcall关键字 pascal c call

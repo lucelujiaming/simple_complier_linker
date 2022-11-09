@@ -27,6 +27,7 @@ typedef struct Symbol
 } Symbol;
 
 /* 单词存储结构定义 */
+/* 说一下如何理解 */
 typedef struct TkWord
 {
     int  tkcode;					// 单词编码 
@@ -48,4 +49,5 @@ Symbol * var_sym_put(Type * type, int r, int v, int addr);
 Symbol * sec_sym_put(char * sec, int c);
 void sym_pop(std::vector<Symbol> * pop, Symbol *b);
 
+void print_all_stack(char* strPrompt);
 #endif

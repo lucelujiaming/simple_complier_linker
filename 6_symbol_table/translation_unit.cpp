@@ -10,6 +10,7 @@ int syntax_level;
 
 extern std::vector<Symbol> global_sym_stack;  //全局符号栈
 extern std::vector<Symbol> local_sym_stack;   //局部符号栈
+extern std::vector<TkWord> tktable;
 
 Type char_pointer_type,		// 字符串指针
 	 int_type,				// int类型
@@ -279,9 +280,39 @@ void parameter_type_list(Type * type, int func_call) // (int func_call)
  ***********************/
 void func_body(Symbol * sym)
 {
+	/* 放一个匿名符号到局部符号表中 */
 	sym_direct_push(local_sym_stack, SC_ANOM, &int_type, 0);
+	print_all_stack("sym_push local_sym_stack");
 	compound_statement(NULL, NULL);
-	sym_pop(&local_sym_stack, NULL);
+	print_all_stack("Left local_sym_stack");
+	if(local_sym_stack.size() > 0)
+	{
+		/* 清空局部符号表 */
+		sym_pop(&local_sym_stack, NULL);
+	}
+	print_all_stack("Clean local_sym_stack");
+}
+
+void print_all_stack(char* strPrompt)
+{
+	int i;
+	printf("\n-------------------%s---------------------------\n", strPrompt);
+	for(i = 0; i < global_sym_stack.size(); ++i)
+	{
+		printf("\t global_sym_stack[%d].v = %08X c = %d type = %d\n", i, 
+			global_sym_stack[i].v, 
+			global_sym_stack[i].c, 
+			global_sym_stack[i].type);
+	}
+	for(i = 0; i < local_sym_stack.size(); ++i)
+	{
+		printf("\t  local_sym_stack[%d].v = %08X c = %d type = %d\n", i, 
+			local_sym_stack[i].v, 
+			local_sym_stack[i].c, 
+			local_sym_stack[i].type);
+	}
+	printf("\t tktable.size = %d \n", tktable.size());
+	printf("----------------------------------------------\n");
 }
 
 // 初值符的代码如下所示。
@@ -290,6 +321,7 @@ void func_body(Symbol * sym)
 *********************************************/
 void initializer(Type * type)
 {
+	// 数组不能赋初值。
 	if(type->t & T_ARRAY)
 	{
 		get_token();
@@ -364,8 +396,11 @@ int is_type_specifier(int token_type)
 void compound_statement(int * bsym, int * csym)
 {
 	Symbol *s;
-	s = &(local_sym_stack[0]);
-	local_sym_stack.erase(&local_sym_stack[0]);
+	// s = &(local_sym_stack[0]);
+	s = local_sym_stack.end() - 1;
+	// local_sym_stack.erase(&local_sym_stack[0]);
+	// local_sym_stack.erase(local_sym_stack.end() - 1);
+	printf("\t local_sym_stack.size = %d \n", local_sym_stack.size());
 	
 	syntax_state = SNTX_LF_HT;
 	syntax_level++;
@@ -378,9 +413,15 @@ void compound_statement(int * bsym, int * csym)
 
 	while(get_current_token_type() != TK_END)
 	{
+		if(get_current_token_type() == TK_EOF)
+			break;
+		char temp_str[128];
+		sprintf(temp_str, "Execute %s statement", get_current_token());
+		print_all_stack(temp_str);
 		statement();
 	}
 	syntax_state = SNTX_LF_HT;
+	printf("\t local_sym_stack.size = %d \n", local_sym_stack.size());
 	sym_pop(&local_sym_stack, s);
 	get_token();
 }
@@ -764,12 +805,17 @@ void postfix_expression()
  **********************************************************/
 void primary_expression()
 {
-	int t , addr;
+	// 这里的addr暂时没有用到。这个是用法是首先调用allocate_storage函数，从这个函数中获得。
+	// 这个函数主要用于在空间不够的时候，分配节的空间，同时返回当前符号在节中的存储位置。
+	// 这里的节是一个可执行程序中的概念。例如代码节，数据节，符号表节。
+	int t , addr = 0;
 	Type type;
 	Symbol *s ;
 	switch(get_current_token_type()) {
 	case TK_CINT:
 	case TK_CCHAR:
+		get_token();
+		break;
 	case TK_CSTR:
 		// get_token();
 		t = T_CHAR;
@@ -785,23 +831,27 @@ void primary_expression()
 		skip_token(TK_CLOSEPA);
 		break;
 	default:
+		char tkStr[128];
 		t = get_current_token_type();
+		strcpy(tkStr, get_current_token());
 		get_token();
 		if (t < TK_IDENT) // The problem of String at 07/11, We need the parse_string function
 		{
-			print_error("Need variable or constant\n");
+			// print_error("Need variable or constant\n");
+			printf("Need variable or constant\n");
 		}
 		s = sym_search(t);
 		if(!s)
 		{
 			if (get_current_token_type() != TK_OPENPA)
 			{
-				char testStr[128];
-				sprintf(testStr, "%s does not declare\n", get_current_token());
-				print_error(testStr);
-				s = func_sym_push(t, &default_func_type);
-				s->r = SC_GLOBAL | SC_SYM;
+				// char tmpStr[128];
+				// sprintf(tmpStr, "%s does not declare\n", get_current_token());
+				printf("%s does not declare\n", tkStr);
+				// print_error(testStr);
 			}
+			s = func_sym_push(t, &default_func_type);
+			s->r = SC_GLOBAL | SC_SYM;
 		}
 		break;
 	}
@@ -1011,43 +1061,109 @@ int type_specifier(Type * type)
 /************************************************************************/
 /*  iSaveType e_StorageClass  存储类型                                  */
 /************************************************************************/
+// 这里涉及到这个系统中比较精妙的一个部分。
+// 就是我们认为结构体声明，全局变量声明和函数（声明和定义）都是外部声明。
+// 这样，我们就把包含多个函数，多个全局变量声明和多个结构体声明的代码看成是多个外部声明。
+// 之后语法解析就变成解析一个一个的外部声明。
+// 同时为了简化设计，结构体声明，必须集中放在文件开头。
+// 后面跟着若干个函数声明，函数定义和全局变量声明。
+// 而函数external_declaration的作用就是处理一个外部声明。一旦处理成功就返回。
 void external_declaration(e_StorageClass iSaveType)
 {
 	Type bTypeCurrent, typeCurrent ;
+	// v:	符号编号
 	int v; // , has_init, addr;
+	
+	// 这里的addr暂时没有用到。这个是用法是首先调用allocate_storage函数，从这个函数中获得。
+	// 这个函数主要用于在空间不够的时候，分配节的空间，同时返回当前符号在节中的存储位置。
+	// 这里的节是一个可执行程序中的概念。例如代码节，数据节，符号表节。
+	int addr = 0;
+	
 	Symbol * sym;
+	print_all_stack("Starting external_declaration");
 	if (!type_specifier(&bTypeCurrent))
 	{
 		print_error("Need type token\n");
 	}
-
+	// 因此上，如果前面type_specifier有处理结构体，这时bTypeCurrent.t就会等于T_STRUCT。
+	// 这说明这一次，我们处理完了一个外部声明。我们就返回。
 	if (bTypeCurrent.t = T_STRUCT && get_current_token_type() == TK_SEMICOLON)
 	{
+		print_all_stack("End external_declaration");
 		get_token();
 		return;
 	}
-
+	// 代码执行到这里，说明我们已经处理完成了所有的结构体声明。
+	// 下面处理混合排列的函数声明，函数定义和全局变量声明。
 	while (1)
 	{
 		typeCurrent = bTypeCurrent;
 		declarator(&typeCurrent, &v, NULL);
-		// XXXXXXXXXXXXXXXXXXXXXXX
+		// 函数定义
 		if (get_current_token_type() == TK_BEGIN)
 		{
+			// 函数不能是本地的。只能是全局的。
 			if (iSaveType == SC_LOCAL)
 			{
-				print_error("Not nexsting function\n");
+				print_error("Not nesting function\n");
 			}
-			
+			// 声明后面跟着括号。必须是函数。否则就报错。
+			if((typeCurrent.t & T_BTYPE) != T_FUNC)
+			{
+				print_error("Needing function defination\n");
+			}
+			// 如果查找到了这个符号。说明前面进行了函数定义。
+			sym = sym_search(v);
+			if(sym)
+			{
+				// 如果发现前面定义的不是函数定义。而是一个变量定义，就报错退出。
+				if((sym->type.t & T_BTYPE) != T_FUNC)
+				{
+					char tmpStr[128];
+					sprintf(tmpStr, "Function %s redefination\n", get_current_token());
+					print_error(tmpStr);
+				}
+				sym->type = typeCurrent;
+			}
+			// 如果没有找到，就直接添加。
+			else
+			{
+				sym = func_sym_push(v, &typeCurrent);
+			}
+			// 全局普通符号。
+			sym->r = SC_SYM | SC_GLOBAL;
+			print_all_stack("Enter funtion body");
 			func_body(sym);
 			break;
 		}
 		else
 		{
-			if (get_current_token_type() == TK_ASSIGN)  // int a = 5 ;
+			// 函数声明
+			if((typeCurrent.t & T_BTYPE) != T_FUNC)
 			{
-				get_token();
-				initializer(&typeCurrent);
+				if (sym_search(v) == NULL)
+				{
+					sym = sym_push(v, &typeCurrent, SC_GLOBAL | SC_SYM, 0);
+				}
+			}
+			// 变量声明
+			else
+			{
+				int r = 0;
+				// 如果是数组。就只能是左值。
+				if(!(typeCurrent.t & T_ARRAY))
+				{
+					r |= SC_LVAL;
+				}
+				r |= iSaveType;
+				// 如果变量声明的时候同时做了赋初值。执行赋初值操作。
+				if (get_current_token_type() == TK_ASSIGN)  // int a = 5 ;
+				{
+					get_token();
+					initializer(&typeCurrent);
+				}
+				// 添加符号。
+				sym = var_sym_put(&typeCurrent, r, v, addr);
 			}
 			
 			if(get_current_token_type() ==TK_COMMA)  // int a, b ;
@@ -1074,5 +1190,4 @@ void translation_unit()
 		external_declaration(SC_GLOBAL);
 	}
 }
-
 

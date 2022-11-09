@@ -435,7 +435,10 @@ int get_token()
 		*temp=0;
 		token_type = look_up(token); /* convert to internal rep */
 		if(token_type == -1)
+		{
 			token_type=TK_IDENT;
+		}
+		tkword_insert(token);
 		syntax_indent();
 		return token_type;
 	}
@@ -460,7 +463,10 @@ int get_token()
   if(token_type==TK_IDENT) {
     token_type = look_up(token); /* convert to internal rep */
 	if(token_type == -1)
+	{
 		token_type=TK_IDENT;
+	}
+	tkword_insert(token);
   }
   
   syntax_indent();
@@ -471,7 +477,7 @@ void skip_token(int c)
 {
 	if (get_current_token_type() != c)
 	{
-		printf("Missing %d", c);
+		printf("Missing %d\n", c);
 	}
 	get_token();
 }
@@ -540,10 +546,6 @@ void token_init(char * strFilename)
 
 	lineNum = 1;
 	// init_lex();
-//	for (int i = 0 ; i < sizeof(token_table) / sizeof(struct commands) ; i++)
-//	{
-//		tktable.push_back(token_table[i].command);
-//	}
 }
 
 void token_cleanup()
@@ -557,14 +559,31 @@ void token_cleanup()
 //	free(tktable.data);
 }
 
-void push_token(char * strNewToken, e_TokenCode tokenCode)
+TkWord* tkword_insert(char * strNewToken) // , e_TokenCode tokenCode)
 {
+	int length;
 //	if(token_type == TK_CSTR)
 //			tktable.push_back(std::string(strNewToken));
 	TkWord tkWord;
-	tkWord.spelling = strNewToken;
-	tkWord.tkcode = tokenCode;
+	for (int i = 0; i < tktable.size(); i++)
+	{
+		// printf("tktable[%d].spelling = %s \n", i, tktable[i].spelling);
+		if (!strcmp(tktable[i].spelling,strNewToken))
+		{
+			return &tktable[i];
+		}
+	}
+	
+	length = strlen(strNewToken);
+	tkWord.spelling = (char *)malloc(length + 1); 
+	strcpy(tkWord.spelling, strNewToken);
+	tkWord.tkcode = tktable.size() - 1;
+	tkWord.sym_identifier = NULL;
+	tkWord.sym_struct = NULL;
+	
+	// tkWord.tkcode = tokenCode;
 	tktable.push_back(tkWord);
+	return tktable.end() - 1;
 }
 
 char * get_current_token()

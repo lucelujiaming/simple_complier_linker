@@ -1,0 +1,108 @@
+tktable.size = 43
+struct
+-------------------Starting external_declaration---------------------------
+          local_sym_stack[0].v = 10000000 c = -1 type = 1
+tktable.size = 43
+----------------------------------------------
+ point
+
+{
+ tktable.size = 43
+
+                (v & ~SC_STRUCT) = (0x02C,44) and ts.tkcode = 0xCDCDCDCD
+
+        short x;
+
+short y;
+
+};
+-------------------End external_declaration---------------------------
+         global_sym_stack[0].v = 2000002C c = 2 type = 6
+         global_sym_stack[1].v = 4000002C c = 0 type = 2
+         global_sym_stack[2].v = 4000002C c = 2 type = 2
+          local_sym_stack[0].v = 10000000 c = -1 type = 1
+tktable.size = 43
+----------------------------------------------
+
+
+void
+-------------------Starting external_declaration---------------------------
+         global_sym_stack[0].v = 2000002C c = 2 type = 6
+         global_sym_stack[1].v = 4000002C c = 0 type = 2
+         global_sym_stack[2].v = 4000002C c = 2 type = 2
+          local_sym_stack[0].v = 10000000 c = -1 type = 1
+tktable.size = 43
+----------------------------------------------
+ main()Missing 22
+
+{
+-------------------Enter funtion body---------------------------
+         global_sym_stack[0].v = 2000002C c = 2 type = 6
+         global_sym_stack[1].v = 4000002C c = 0 type = 2
+         global_sym_stack[2].v = 4000002C c = 2 type = 2
+         global_sym_stack[3].v = 10000000 c = 0 type = 0
+          local_sym_stack[0].v = 10000000 c = -1 type = 1
+tktable.size = 43
+----------------------------------------------
+
+
+struct
+-------------------Starting external_declaration---------------------------
+         global_sym_stack[0].v = 2000002C c = 2 type = 6
+         global_sym_stack[1].v = 4000002C c = 0 type = 2
+         global_sym_stack[2].v = 4000002C c = 2 type = 2
+         global_sym_stack[3].v = 10000000 c = 0 type = 0
+          local_sym_stack[0].v = 10000000 c = 0 type = 0
+tktable.size = 43
+----------------------------------------------
+ point  pt
+ tktable.size = 43
+
+                (v & ~SC_STRUCT) = (0x02C,44) and ts.tkcode = 0xCDCDCDCD
+;
+
+char
+-------------------Starting external_declaration---------------------------
+         global_sym_stack[0].v = 2000002C c = 2 type = 6
+         global_sym_stack[1].v = 4000002C c = 0 type = 2
+         global_sym_stack[2].v = 4000002C c = 2 type = 2
+         global_sym_stack[3].v = 10000000 c = 0 type = 0
+         global_sym_stack[4].v = 2000002C c = -1 type = 6
+          local_sym_stack[0].v = 10000000 c = 0 type = 0
+tktable.size = 43
+----------------------------------------------
+ *pstr;
+
+return  1
+ tktable.size = 43
+
+                (v & ~SC_STRUCT) = (0x000,0) and ts.tkcode = 0x000
+;
+
+}
+
+-------------------Left local_sym_stack---------------------------
+         global_sym_stack[0].v = 2000002C c = 2 type = 6
+         global_sym_stack[1].v = 4000002C c = 0 type = 2
+         global_sym_stack[2].v = 4000002C c = 2 type = 2
+         global_sym_stack[3].v = 10000000 c = 0 type = 0
+         global_sym_stack[4].v = 2000002C c = -1 type = 6
+         global_sym_stack[5].v = 10000000 c = -1 type = 0
+         global_sym_stack[6].v = 10000000 c = -1 type = 1
+         global_sym_stack[7].v = 00000000 c = 0 type = 20
+          local_sym_stack[0].v = 10000000 c = 0 type = 0
+tktable.size = 43
+----------------------------------------------
+
+-------------------Clean local_sym_stack---------------------------
+         global_sym_stack[0].v = 2000002C c = 2 type = 6
+         global_sym_stack[1].v = 4000002C c = 0 type = 2
+         global_sym_stack[2].v = 4000002C c = 2 type = 2
+         global_sym_stack[3].v = 10000000 c = 0 type = 0
+         global_sym_stack[4].v = 2000002C c = -1 type = 6
+         global_sym_stack[5].v = 10000000 c = -1 type = 0
+         global_sym_stack[6].v = 10000000 c = -1 type = 1
+         global_sym_stack[7].v = 00000000 c = 0 type = 20
+tktable.size = 43
+----------------------------------------------
+Hello World!
