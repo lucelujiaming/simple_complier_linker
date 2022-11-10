@@ -90,6 +90,7 @@ void syntax_indent()
 void function_calling_convention(int *fc)
 {
 	*fc = KW_CDECL;  // Set default value with __cdecl
+	// 如果函数声明指定了调用方式，就进行处理。否则就不用处理。当前token不变。
 	if(get_current_token_type() == KW_CDECL || get_current_token_type() == KW_STDCALL)
 	{
 		*fc = get_current_token_type();
@@ -154,6 +155,9 @@ void declarator(Type * type, int * v, int * force_align)
 		mk_pointer(type);
 		get_token();
 	}
+	// 这两步其实在SC程序代码中是选做。
+	// 也就是一个变量声明和函数声明一般来说，极有可能是不包含函数调用约定和对齐的。
+	// 当然编译程序必须处理。
 	function_calling_convention(&fc);
 	if(force_align)
 	{
@@ -196,9 +200,9 @@ void direct_declarator_postfix(Type * type, int func_call)
 		n = -1;
 		if(get_current_token_type() == TK_CINT)
 		{
+			n = atoi(get_current_token());  // as a TK_CINT
 			get_token();
 			// n = tkvalue;  // ??
-			n = atoi(get_current_token());  // as a TK_CINT
 		}
 		else
 		{
@@ -311,8 +315,12 @@ void print_all_stack(char* strPrompt)
 			local_sym_stack[i].c, 
 			local_sym_stack[i].type);
 	}
-	printf("\t tktable.size = %d \n", tktable.size());
-	printf("----------------------------------------------\n");
+	printf("\t tktable.size = %d \n --- ", tktable.size());
+	for (i = 40; i < tktable.size(); i++)
+	{
+		printf(" %s ", tktable[i].spelling);
+	}
+	printf(" --- \n----------------------------------------------\n");
 }
 
 // 初值符的代码如下所示。
@@ -878,15 +886,15 @@ void argument_expression_list()
 }
 
 /************************************************************************
- *	<struct_declaration> ::= 
+ *	<struct_member_declaration> ::= 
  *	<type_specifier><struct_declarator_list><TK_SEMICOLON>*
  *	<struct_declarator_list> ::= <declarator>{<TK_COMMA><declarator>}
  *	等价转换后文法：：
- *	<struct_declaration> ::= 
+ *	<struct_member_declaration> ::= 
  *	<type_specifier><declarator>{<TK_COMMA><declarator>}
  *	<TK_SEMICOLON>
  ***********************************************************************/
-void struct_declaration(int * maxalign, int * offset, Symbol *** ps)
+void struct_member_declaration(int * maxalign, int * offset, Symbol *** ps)
 {
 	int v, size, align;
 	Symbol * ss;
@@ -932,8 +940,8 @@ int calc_align(int n , int align)
 }
 
 /************************************************************************/
-/*  <struct_declaration_list> ::= <struct_declaration>                  */
-/*                               {<struct_declaration>}                 */
+/*  <struct_declaration_list> ::= <struct_member_declaration>                  */
+/*                               {<struct_member_declaration>}                 */
 /************************************************************************/
 void struct_declaration_list(Type * type)
 {
@@ -954,7 +962,7 @@ void struct_declaration_list(Type * type)
 	// end of Adding Symbol operation
 	while (get_current_token_type() != TK_END)  // } 右大括号
 	{
-		struct_declaration(&maxalign, &offset, &ps);
+		struct_member_declaration(&maxalign, &offset, &ps);
 	}
 	skip_token(TK_END);
 	// syntax_state = SNTX_LF_HT;
@@ -1071,8 +1079,8 @@ int type_specifier(Type * type)
 void external_declaration(e_StorageClass iSaveType)
 {
 	Type bTypeCurrent, typeCurrent ;
-	// v:	符号编号
-	int v; // , has_init, addr;
+	// v:	符号编号。类型为e_TokenCode。
+	int v = -1; // , has_init, addr;
 	
 	// 这里的addr暂时没有用到。这个是用法是首先调用allocate_storage函数，从这个函数中获得。
 	// 这个函数主要用于在空间不够的时候，分配节的空间，同时返回当前符号在节中的存储位置。

@@ -57,7 +57,7 @@ Symbol * sym_push(int v, Type * type, int r, int c)
 	Symbol *ps, **pps;
 	TkWord *ts;
 	// std::vector<Symbol> * ss;
-	
+
 	if(local_sym_stack.size() == 0)
 	{
 		ps = sym_direct_push(local_sym_stack, v, type, c);
@@ -68,9 +68,9 @@ Symbol * sym_push(int v, Type * type, int r, int c)
 		ps = sym_direct_push(global_sym_stack, v, type, c);
 		print_all_stack("sym_push global_sym_stack");
 	}
-	
+
 	ps->r = r;
-	
+
 	// 因为不记录结构体成员和匿名符号
 	// 所以下面的逻辑分为两个部分。
 	// 第一个(v & SC_STRUCT)表明v这个符号为结构体符号。
@@ -79,7 +79,7 @@ Symbol * sym_push(int v, Type * type, int r, int c)
 	{
 		printf("\n tktable.size = %d \n", tktable.size());
 		ts = &(TkWord)tktable[v & ~SC_STRUCT];
-		printf("\n\t\t(v & ~SC_STRUCT) = (0x%03X,%d) and ts.tkcode = 0x%03X\n", 
+		printf("\n\t\t(v & ~SC_STRUCT) = (0x%03X,%d) and ts.tkcode = 0x%03X\n",
 			v & ~SC_STRUCT, v & ~SC_STRUCT, ts->tkcode);
 		// 如果是结构体符号。设置sym_struct成员。
 		if(v & SC_STRUCT)
@@ -87,7 +87,7 @@ Symbol * sym_push(int v, Type * type, int r, int c)
 		// 否则就是小于SC_ANOM的符号。
 		else
 			pps = &ts->sym_identifier;
-		
+
 		ps->prev_tok = *pps;
 		*pps = ps;
 	}
@@ -99,14 +99,16 @@ Symbol * sym_push(int v, Type * type, int r, int c)
  *  v：   符号编号
  *  type：符号数据类型
  *  函数放入符号表使用func_sym_push函数，
- *  这个函数保证函数符号都存放在全局符号栈， 
+ *  这个函数保证函数符号都存放在全局符号栈，
  **********************************************************/
 Symbol * func_sym_push(int v, Type * type)
 {
 	Symbol *s, **ps;
-	print_all_stack("sym_push global_sym_stack");
 	s = sym_direct_push(global_sym_stack, v, type, 0);
-	ps = &((TkWord *)&tktable[v])->sym_identifier;
+	print_all_stack("sym_push global_sym_stack");
+	printf("tktable[%d].spelling = %s \n", v, tktable[v].spelling);
+	// ps = &((TkWord *)&tktable[v])->sym_identifier;
+	ps = &(tktable[v].sym_identifier);
 	while(*ps != NULL)
 		ps = &(* ps)->prev_tok;
 	s->prev_tok = NULL;
@@ -170,8 +172,9 @@ void sym_pop(std::vector<Symbol> * pop, Symbol *b)
 	Symbol *s, **ps;
 	TkWord * ts;
 	int v;
-	
-	s = &(pop->back());
+
+	// s = &(pop->back());
+	s = local_sym_stack.end() - 1;
 	while(s != b)
 	{
 		v = s->v;
@@ -183,13 +186,16 @@ void sym_pop(std::vector<Symbol> * pop, Symbol *b)
 				ps = &ts->sym_struct;
 			else
 				ps = &ts->sym_identifier;
-			
+
 			*ps = s->prev_tok ;
 		}
 		// pop->erase(pop->begin());
 		pop->pop_back();
 		if(pop->size() > 0)
-			s = &(pop->back());
+		{
+			// s = &(pop->back());
+			s = local_sym_stack.end() - 1;
+		}
 		else
 			break;
 	}
@@ -232,49 +238,56 @@ void init_lex()
 	{TK_PLUS,		NULL,	  "+",	NULL,	NULL},
 	{TK_MINUS,		NULL,	  "-",	NULL,	NULL},
 	{TK_STAR,		NULL,	  "*",	NULL,	NULL},
-	{TK_DIVIDE,		NULL,	  "/",	NULL,	NULL},	
+	{TK_DIVIDE,		NULL,	  "/",	NULL,	NULL},
 	{TK_MOD,		NULL,	  "%",	NULL,	NULL},
+
 	{TK_EQ,			NULL,	  "==",	NULL,	NULL},
 	{TK_NEQ,		NULL,	  "!=",	NULL,	NULL},
 	{TK_LT,			NULL,	  "<",	NULL,	NULL},
 	{TK_LEQ,		NULL,	  "<=",	NULL,	NULL},
 	{TK_GT,			NULL,	  ">",	NULL,	NULL},
+
 	{TK_GEQ,		NULL,	  ">=",	NULL,	NULL},
 	{TK_ASSIGN,		NULL,	  "=",	NULL,	NULL},
 	{TK_POINTSTO,	NULL,	  "->",	NULL,	NULL},
 	{TK_DOT,		NULL,	  ".",	NULL,	NULL},
 	{TK_AND,		NULL,	  "&",	NULL,	NULL},
+
 	{TK_OPENPA,		NULL,	  "(",	NULL,	NULL},
 	{TK_CLOSEPA,	NULL,	  ")",	NULL,	NULL},
 	{TK_OPENBR,		NULL,	  "[",	NULL,	NULL},
-	{TK_CLOSEBR,	NULL,	  "]",	NULL,	NULL},	
+	{TK_CLOSEBR,	NULL,	  "]",	NULL,	NULL},
 	{TK_BEGIN,		NULL,	  "{",	NULL,	NULL},
+
 	{TK_END,		NULL,	  "}",	NULL,	NULL},
 	{TK_SEMICOLON,	NULL,	  ";",	NULL,	NULL},
 	{TK_COMMA,		NULL,	  ",",	NULL,	NULL},
 	{TK_ELLIPSIS,	NULL,	"...",	NULL,	NULL},
 	{TK_EOF,		NULL,	 "End_Of_File",	NULL,	NULL},
-                     	     	    
-    /* 常量 26-28 */ 
-	{TK_CINT,		NULL,	 	"整型常量",	NULL,	NULL},        
-	{TK_CCHAR,		NULL,		"字符常量",	NULL,	NULL},        
-	{TK_CSTR,		NULL,		"字符串常量",	NULL,	NULL},	      
 
-	/* 关键字 29-41 */        	     	     	  	
+    /* 常量 26-28 */
+	{TK_CINT,		NULL,	 	"整型常量",	NULL,	NULL},
+	{TK_CCHAR,		NULL,		"字符常量",	NULL,	NULL},
+	{TK_CSTR,		NULL,		"字符串常量",	NULL,	NULL},
+
+	/* 关键字 29-41 */
 	{KW_CHAR,		NULL,		"char",	NULL,	NULL},
 	{KW_SHORT,		NULL,		"short",	NULL,	NULL},
 	{KW_INT,		NULL,		"int",	NULL,	NULL},
-	{KW_VOID,		NULL,		"void",	NULL,	NULL},	
+	{KW_VOID,		NULL,		"void",	NULL,	NULL},
 	{KW_STRUCT,		NULL,		"struct",	NULL,	NULL},
-                     	     	     	  	
-	{KW_IF,			NULL,		"if"	,	NULL,	NULL},  
-	{KW_ELSE,		NULL,		"else",	NULL,	NULL},  
-	{KW_FOR,		NULL,		"for",	NULL,	NULL},  
+
+	{KW_IF,			NULL,		"if"	,	NULL,	NULL},
+	{KW_ELSE,		NULL,		"else",	NULL,	NULL},
+	{KW_FOR,		NULL,		"for",	NULL,	NULL},
+	// 这里少了一行。。
+	{KW_WHILE,		NULL,		"while",	NULL,	NULL},
 	{KW_CONTINUE,	NULL,		"continue",	NULL,	NULL},
-	{KW_BREAK,		NULL,		"break",	NULL,	NULL},    
+
+	{KW_BREAK,		NULL,		"break",	NULL,	NULL},
 	{KW_RETURN,		NULL,		"return",	NULL,	NULL},
 	{KW_SIZEOF,		NULL,		"sizeof",	NULL,	NULL},
-	
+
 	/* 关键字 42-44 */
 	{KW_ALIGN,		NULL,		"__align",	NULL,	NULL},
 	{KW_CDECL,		NULL,		"__cdecl",	NULL,	NULL},
@@ -285,7 +298,15 @@ void init_lex()
     for (tp = &keywords[0]; tp->spelling != NULL; tp++)
 		tktable.push_back(*tp);
 	printf("tktable.size = %d \n", tktable.size());
-		
+
+}
+
+void print_all_TkWord()
+{
+	for (int i = 0; i < tktable.size(); i++)
+	{
+		printf("tktable[%d].spelling = %s \n", i, tktable[i].spelling);
+	}
 }
 
 void init()
@@ -299,7 +320,7 @@ void init()
 	char_pointer_type.t = T_CHAR;
 	mk_pointer(&char_pointer_type);
 	default_func_type.t = T_FUNC;
-//	default_func_type.ref = 
+//	default_func_type.ref =
 }
 
 int main(int argc, char* argv[])
@@ -309,6 +330,7 @@ int main(int argc, char* argv[])
 	get_token();
 	translation_unit();
 	printf("Hello World!\n");
+	print_all_TkWord();
 	token_cleanup();
 	return 0;
 }
