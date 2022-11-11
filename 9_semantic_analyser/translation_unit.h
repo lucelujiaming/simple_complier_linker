@@ -1,7 +1,7 @@
 #ifndef TRANSLATION_UNIT_H
 #define TRANSLATION_UNIT_H
 
-#include "coff_generator.h"
+#include "get_token.h"
 
 /*******************************grammar.h begin****************************/
 /* 语法状态 */
@@ -20,9 +20,9 @@ enum e_StorageClass
 	SC_LOCAL  =   0x00f1,		// 栈中变量
 	SC_LLOCAL =   0x00f2,       // 寄存器溢出存放栈中
 	SC_CMP    =   0x00f3,       // 使用标志寄存器
-	SC_VALMASK=   0x00ff,       // 存储类型掩码
-	SC_LVAL   =   0x0100,       // 左值
-	SC_SYM    =   0x0200,       // 符号
+	SC_VALMASK=   0x00ff,       // 存储类型掩码             
+	SC_LVAL   =   0x0100,       // 左值       
+	SC_SYM    =   0x0200,       // 符号	
 
 	SC_ANOM	  = 0x10000000,     // 匿名符号
 	SC_STRUCT = 0x20000000,     // 结构体符号

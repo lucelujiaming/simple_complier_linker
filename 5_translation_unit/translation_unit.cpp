@@ -79,6 +79,7 @@ void syntax_indent()
 void function_calling_convention(int *fc)
 {
 	*fc = KW_CDECL;  // Set default value with __cdecl
+	// 如果函数声明指定了调用方式，就进行处理。否则就不用处理。当前token不变。
 	if(get_current_token_type() == KW_CDECL || get_current_token_type() == KW_STDCALL)
 	{
 		*fc = get_current_token_type();
@@ -92,6 +93,7 @@ void function_calling_convention(int *fc)
 /*   "__align",       KW_ALIGN,		// __align关键字	                   */
 void struct_member_alignment() // (int *fc)
 {
+    // 如果函数声明指定了对齐方式，就进行处理。否则就不用处理。当前token不变。
 	// Do not need indent or not
 	if(get_current_token_type() == KW_ALIGN)
 	{
@@ -120,6 +122,9 @@ void declarator()
 	{
 		get_token();
 	}
+	// 这两步其实在SC程序代码中是选做。
+	// 也就是一个变量声明和函数声明一般来说，极有可能是不包含函数调用约定和对齐的。
+	// 当然编译程序必须处理。
 	function_calling_convention(&fc);
 	struct_member_alignment();  // &fc
 	direct_declarator();

@@ -39,7 +39,7 @@ typedef struct TkWord
 
 Symbol * struct_search(int v);
 Symbol * sym_search(int v);
-
+void sym_pop(std::vector<Symbol> * pop, Symbol *b);
 Symbol * sym_push(int v, Type * type, int r, int c);
 
 Symbol * sym_direct_push(std::vector<Symbol> &ss, int v, Type * type, int c);
@@ -47,7 +47,7 @@ Symbol * func_sym_push(int v, Type * type);
 
 Symbol * var_sym_put(Type * type, int r, int v, int addr);
 Symbol * sec_sym_put(char * sec, int c);
-void sym_pop(std::vector<Symbol> * pop, Symbol *b);
 
 void print_all_stack(char* strPrompt);
+void mk_pointer(Type *t);
 #endif

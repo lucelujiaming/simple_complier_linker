@@ -1,3 +1,5 @@
+#ifndef TOKEN_CODE_H
+#define TOKEN_CODE_H
 /* µ¥´Ê±àÂë */
 enum e_TokenCode
 {  
@@ -74,3 +76,5 @@ enum{
 	LEX_SEP
 };
 
+
+#endif

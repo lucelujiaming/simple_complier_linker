@@ -3,6 +3,7 @@
 
 #include "stdafx.h"
 #include "token_code.h"
+#include "get_token.h"
 #include "symbol_table.h"
 #include <windows.h>
 #include "x86_generator.h"

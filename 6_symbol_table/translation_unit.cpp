@@ -940,8 +940,8 @@ int calc_align(int n , int align)
 }
 
 /************************************************************************/
-/*  <struct_declaration_list> ::= <struct_member_declaration>                  */
-/*                               {<struct_member_declaration>}                 */
+/*  <struct_declaration_list> ::= <struct_member_declaration>           */
+/*                               {<struct_member_declaration>}          */
 /************************************************************************/
 void struct_declaration_list(Type * type)
 {
@@ -1067,6 +1067,7 @@ int type_specifier(Type * type)
 }
 
 /************************************************************************/
+/*  功能：解析外部声明                                                  */
 /*  iSaveType e_StorageClass  存储类型                                  */
 /************************************************************************/
 // 这里涉及到这个系统中比较精妙的一个部分。
