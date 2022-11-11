@@ -96,10 +96,10 @@ void operand_swap()
 /*  r：操作数存储类型                                                   */
 /*  value：操作数值                                                     */
 /************************************************************************/
-void operand_assign(Operand * opd, int t, int r, int value)
+void operand_assign(Operand * opd, int token_code, int storage_class, int value)
 {
-	opd->type.t = t;
-	opd->r = r;
+	opd->type.type = token_code;
+	opd->r = storage_class;
 	opd->value = value;
 }
 
@@ -227,7 +227,7 @@ void load(int r, Operand * opd)
 {
 	int v, ft, fc, fr;
 	ft = opd->r;
-	fc = opd->type.t;
+	fc = opd->type.type;
 	fr = opd->value;
 
 	v = fr & SC_VALMASK;
@@ -283,7 +283,7 @@ void store(int r, Operand * opd)
 {
 	int fr, bt;
 	fr = opd->r & SC_VALMASK;
-	bt = opd->type.t & T_BTYPE;
+	bt = opd->type.type & T_BTYPE;
 
 	if (bt == T_SHORT)
 	{
@@ -363,7 +363,7 @@ void store_one()
  **********************************************************/
 Type *pointed_type(Type *t)
 {
-    return &t->ref->type;
+    return &t->ref->typeSymbol;
 }
 
 /***********************************************************
@@ -385,15 +385,15 @@ void gen_op(int op)
 	int u, btOne, btTwo;
 	Type typeOne;
 
-	btOne = operand_stack_second->type.t & T_BTYPE;
-	btTwo = operand_stack_top->type.t & T_BTYPE;
+	btOne = operand_stack_second->type.type & T_BTYPE;
+	btTwo = operand_stack_top->type.type & T_BTYPE;
 
 	if (btOne == T_PTR || btTwo == T_PTR)
 	{
 		if (op >= TK_EQ && op <= TK_GEQ)   // >,<,>=.<=...
 		{
 			gen_opInteger(op);
-			operand_stack_top->type.t = T_INT;
+			operand_stack_top->type.type = T_INT;
 		}
 		else if (btOne == T_PTR && btTwo == T_PTR)
 		{
@@ -403,7 +403,7 @@ void gen_op(int op)
 			}
 			u = pointed_size(&operand_stack_second->type);
 			gen_opInteger(op);
-			operand_stack_top->type.t = T_INT;
+			operand_stack_top->type.type = T_INT;
 			operand_push(&int_type, SC_GLOBAL, 
 				pointed_size(&operand_stack_second->type));
 			gen_op(TK_DIVIDE);
@@ -431,7 +431,7 @@ void gen_op(int op)
 		gen_opInteger(op);
 		if (op >= TK_EQ && op <= TK_GEQ)   // >,<,>=.<=...
 		{
-			operand_stack_top->type.t = T_INT;
+			operand_stack_top->type.type = T_INT;
 		}
 
 	}
@@ -692,7 +692,7 @@ void gen_invke(int nb_args)
 	}
 
 	spill_regs();
-	func_call = operand_stack_top->type.ref->r;
+	func_call = operand_stack_top->type.ref->storage_class;
 	gen_call();
 	if (args_size && func_call != KW_STDCALL)
 	{
@@ -786,7 +786,7 @@ void spill_reg(char r)
 			}
 			size = type_size(type, &align);
 			loc = calc_align(loc - size, align);
-			operand_assign(&opd, type->t, SC_LOCAL | SC_LVAL, loc);
+			operand_assign(&opd, type->type, SC_LOCAL | SC_LVAL, loc);
 			store(r, &opd);
 			if (p->r & SC_LVAL)
 			{

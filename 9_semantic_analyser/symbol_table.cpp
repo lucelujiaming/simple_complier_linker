@@ -19,24 +19,24 @@ extern Type char_pointer_type,		// 字符串指针
 
 /***********************************************************
  *  功能：将符号放在符号栈中
- *  v：   符号编号
+ *  token_code：   符号编号
  *  type：符号数据类型
- *  c：   符号关联值
+ *  related_value：   符号关联值
  **********************************************************/
-Symbol * sym_direct_push(std::vector<Symbol> &ss, int v, Type * type, int c)
+Symbol * sym_direct_push(std::vector<Symbol> &ss, int token_code, Type * type, int related_value)
 {
 	Symbol s; //, *p;
-	s.v =v;
-	s.type.t = type->t;
-	s.type.ref = type->ref;
-	s.c =c;
+	s.token_code =token_code;
+	s.typeSymbol.type = type->type;
+	s.typeSymbol.ref = type->ref;
+	s.related_value =related_value;
 	s.next = NULL;
 	ss.push_back(s);
-	printf("\t ss.size = %d \n", ss.size());
-	// return &ss[0];
+	// printf("\t ss.size = %d \n", ss.size());
 	if (ss.size() >= 1)
 	{
 		return &ss.back();
+		// return &ss[0];
 	}
 	else
 	{
@@ -52,7 +52,7 @@ Symbol * sym_direct_push(std::vector<Symbol> &ss, int v, Type * type, int c)
  *  r：   符号存储类型
  *  c：   符号关联值
  **********************************************************/
-Symbol * sym_push(int v, Type * type, int r, int c)
+Symbol * sym_push(int token_code, Type * type, int storage_class, int related_value)
 {
 	Symbol *ps, **pps;
 	TkWord *ts;
@@ -60,29 +60,29 @@ Symbol * sym_push(int v, Type * type, int r, int c)
 
 	if(local_sym_stack.size() == 0)
 	{
-		ps = sym_direct_push(local_sym_stack, v, type, c);
+		ps = sym_direct_push(local_sym_stack, token_code, type, related_value);
 		print_all_stack("sym_push local_sym_stack");
 	}
 	else
 	{
-		ps = sym_direct_push(global_sym_stack, v, type, c);
+		ps = sym_direct_push(global_sym_stack, token_code, type, related_value);
 		print_all_stack("sym_push global_sym_stack");
 	}
 
-	ps->r = r;
+	ps->storage_class = storage_class;
 
 	// 因为不记录结构体成员和匿名符号
 	// 所以下面的逻辑分为两个部分。
-	// 第一个(v & SC_STRUCT)表明v这个符号为结构体符号。
-	// 第二个(v < SC_ANOM)表明v这个符号不是匿名符号，结构成员变量，函数参数。
-	if((v & SC_STRUCT) || (v < SC_ANOM))
+	// 第一个(token_code & SC_STRUCT)表明token_code这个符号为结构体符号。
+	// 第二个(token_code < SC_ANOM)表明token_code这个符号不是匿名符号，结构成员变量，函数参数。
+	if((token_code & SC_STRUCT) || (token_code < SC_ANOM))
 	{
-		printf("\n tktable.size = %d \n", tktable.size());
-		ts = &(TkWord)tktable[v & ~SC_STRUCT];
-		printf("\n\t\t(v & ~SC_STRUCT) = (0x%03X,%d) and ts.tkcode = 0x%03X\n",
-			v & ~SC_STRUCT, v & ~SC_STRUCT, ts->tkcode);
+		// printf("\n tktable.size = %d \n", tktable.size());
+		ts = &(TkWord)tktable[token_code & ~SC_STRUCT];
+		// printf("\n\t\t(v & ~SC_STRUCT) = (0x%03X,%d) and ts.tkcode = 0x%03X\n",
+		//	token_code & ~SC_STRUCT, token_code & ~SC_STRUCT, ts->tkcode);
 		// 如果是结构体符号。设置sym_struct成员。
-		if(v & SC_STRUCT)
+		if(token_code & SC_STRUCT)
 			pps = &ts->sym_struct;
 		// 否则就是小于SC_ANOM的符号。
 		else
@@ -96,19 +96,19 @@ Symbol * sym_push(int v, Type * type, int r, int c)
 
 /***********************************************************
  *  功能：将函数符号放入全局符号表中
- *  v：   符号编号
+ *  token_code：   符号编号
  *  type：符号数据类型
  *  函数放入符号表使用func_sym_push函数，
  *  这个函数保证函数符号都存放在全局符号栈，
  **********************************************************/
-Symbol * func_sym_push(int v, Type * type)
+Symbol * func_sym_push(int token_code, Type * type)
 {
 	Symbol *s, **ps;
-	s = sym_direct_push(global_sym_stack, v, type, 0);
+	s = sym_direct_push(global_sym_stack, token_code, type, 0);
 	print_all_stack("sym_push global_sym_stack");
-	printf("tktable[%d].spelling = %s \n", v, tktable[v].spelling);
+	printf("tktable[%d].spelling = %s \n", token_code, tktable[token_code].spelling);
 	// ps = &((TkWord *)&tktable[v])->sym_identifier;
-	ps = &(tktable[v].sym_identifier);
+	ps = &(tktable[token_code].sym_identifier);
 	while(*ps != NULL)
 		ps = &(* ps)->prev_tok;
 	s->prev_tok = NULL;
@@ -120,20 +120,20 @@ Symbol * func_sym_push(int v, Type * type)
  *  变量放入符号表通过var_sym_put函数，
  *  这个函数会根据变量是局部变量还是全局变量，放入相应的符号栈中。
  **********************************************************/
-Symbol * var_sym_put(Type * type, int r, int v, int addr)
+Symbol * var_sym_put(Type * type, int storage_class, int token_code, int addr)
 {
 	Symbol *sym = NULL;
-	if((r & SC_VALMASK) == SC_LOCAL)
+	if((storage_class & SC_VALMASK) == SC_LOCAL)
 	{
-		sym = sym_push(v, type, r, addr);
+		sym = sym_push(token_code, type, storage_class, addr);
 	}
-	else if((r & SC_VALMASK) == SC_GLOBAL)
+	else if((storage_class & SC_VALMASK) == SC_GLOBAL)
 	{
-		sym = sym_search(v);
+		sym = sym_search(token_code);
 		if(sym)
 			printf("Error dual defined");
 		else
-			sym = sym_push(v, type, r | SC_SYM, 0);
+			sym = sym_push(token_code, type, storage_class | SC_SYM, 0);
 	}
 	return sym;
 }
@@ -147,11 +147,11 @@ Symbol * sec_sym_put(char * sec, int c)
 {
 	TkWord * tp;
 	Symbol *s;
-	Type type;
-	type.t = T_INT;
+	Type typeCurrent;
+	typeCurrent.type = T_INT;
 	tp = tkword_insert(sec); // , TK_CINT);
 	token_type = tktable[tktable.size() - 1].tkcode ;
-	s = sym_push(token_type, &type, SC_LOCAL, c);
+	s = sym_push(token_type, &typeCurrent, SC_LOCAL, c);
 	return s;
 }
 
@@ -171,18 +171,18 @@ void sym_pop(std::vector<Symbol> * pop, Symbol *b)
 {
 	Symbol *s, **ps;
 	TkWord * ts;
-	int v;
+	int token_code;
 
 	// s = &(pop->back());
 	s = local_sym_stack.end() - 1;
 	while(s != b)
 	{
-		v = s->v;
+		token_code = s->token_code;
 		// 不记录结构体成员和匿名符号
-		if((v & SC_STRUCT) || v < SC_ANOM)
+		if((token_code & SC_STRUCT) || token_code < SC_ANOM)
 		{
-			ts = &(TkWord)tktable[v & ~SC_STRUCT];
-			if(v & SC_STRUCT)
+			ts = &(TkWord)tktable[token_code & ~SC_STRUCT];
+			if(token_code & SC_STRUCT)
 				ps = &ts->sym_struct;
 			else
 				ps = &ts->sym_identifier;
@@ -295,7 +295,7 @@ void init_lex()
 
     for (tp = &keywords[0]; tp->spelling != NULL; tp++)
 		tktable.push_back(*tp);
-	printf("tktable.size = %d \n", tktable.size());
+	// printf("tktable.size = %d \n", tktable.size());
 
 }
 
@@ -314,10 +314,10 @@ void init()
 	init_lex();
 
 //	sym_sec_rdata = sec_sym_put(".rdata", 0);
-	int_type.t = T_INT;
-	char_pointer_type.t = T_CHAR;
+	int_type.type = T_INT;
+	char_pointer_type.type = T_CHAR;
 	mk_pointer(&char_pointer_type);
-	default_func_type.t = T_FUNC;
+	default_func_type.type = T_FUNC;
 //	default_func_type.ref =
 }
 

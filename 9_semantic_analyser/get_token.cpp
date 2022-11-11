@@ -581,7 +581,7 @@ TkWord* tkword_insert(char * strNewToken) // , e_TokenCode tokenCode)
 	tkWord.sym_identifier = NULL;
 	tkWord.sym_struct = NULL;
 	
-	printf("tkword_insert tktable.count = %d \n", tktable.size());
+	// printf("tkword_insert tktable.count = %d \n", tktable.size());
 	// tkWord.tkcode = tokenCode;
 	tktable.push_back(tkWord);
 	return tktable.end() - 1;

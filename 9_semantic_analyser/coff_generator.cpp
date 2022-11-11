@@ -19,10 +19,11 @@ int nsec_image;				// 映像文件节个数
 
 extern std::vector<TkWord> tktable;
 
+void section_realloc(Section * sec, int new_size);
 int coffsym_search(Section * symtab, char * name);
 char * coffstr_add(Section * strtab, char * name);
 void coffreloc_redirect_add(int offset, int cfsym, char section, char type);
-
+void *mallocz(int size);
 
 /***********************************************************
  *  功能:             新建节
@@ -35,11 +36,11 @@ Section * section_new(char * name, int iCharacteristics)
 {
 	Section * sec;
 	int initSize = 8;
-	sec = (Section *)malloc(sizeof(Section));
+	sec = (Section *)mallocz(sizeof(Section));
 	memcpy(sec->sh.Name, name, strlen(name));
 	sec->sh.Characteristics = iCharacteristics;
-	// sec->index = sections.count + 1;  // Start from 1
-	sec->data = (char *)malloc(sizeof(char) * initSize);
+	sec->index = vecSection.size() + 1;  // Start from 1
+	sec->data = (char *)mallocz(sizeof(char) * initSize);
 	sec->data_allocated = initSize;
 	if(!(iCharacteristics & IMAGE_SCN_LNK_REMOVE))
 		nsec_image++;
@@ -98,8 +99,25 @@ Section * new_coffsym_section(char* symtable_name, int iCharacteristics,
 	Section * sec;
 	sec = section_new(symtable_name, iCharacteristics);
 	sec->link = section_new(strtable_name, iCharacteristics);
-	sec->hashtab = (int *)malloc(sizeof(int) * MAXKEY);
+	sec->hashtab = (int *)mallocz(sizeof(int) * MAXKEY);
 	return sec;
+}
+
+/*********************************************************** 
+ * 功能:	分配堆内存并将数据初始化为'0'
+ * size:	分配内存大小
+ **********************************************************/
+void *mallocz(int size)
+{
+    void *ptr;
+	ptr = malloc(size);
+	if (!ptr && size)
+    {
+		printf("内存分配失败");
+		exit(1);
+	}
+    memset(ptr, 0, size);
+    return ptr;
 }
 
 /*********************************************************** 
@@ -173,14 +191,14 @@ void coffsym_add_update(Symbol *s, int val, int sec_index,
 {
 	char * name;
 	CoffSym *cfsym;
-	if(!s->c)
+	if(!s->related_value)
 	{
-		name = ((TkWord)tktable[s->v]).spelling;
-		s->c = coffsym_add(sec_symtab, name, val, sec_index, type, StorageClass);
+		name = ((TkWord)tktable[s->token_code]).spelling;
+		s->related_value = coffsym_add(sec_symtab, name, val, sec_index, type, StorageClass);
 	}
 	else
 	{
-		cfsym = &((CoffSym *)sec_symtab->data)[s->c];
+		cfsym = &((CoffSym *)sec_symtab->data)[s->related_value];
 		cfsym->value = val;
 		cfsym->shortSection = sec_index;
 	}
@@ -251,11 +269,11 @@ void coffreloc_add(Section * sec, Symbol * sym, int offset, char type)
 {
 	int cfsym;
 	char * name;
-	if(!sym->c)
+	if(!sym->related_value)
 		coffsym_add_update(sym, 0, 
 			IMAGE_SYM_UNDEFINED, 0,  // CST_FUNC,
 			IMAGE_SYM_CLASS_EXTERNAL);
-	name = ((TkWord)tktable[sym->v]).spelling;
+	name = ((TkWord)tktable[sym->token_code]).spelling;
 	cfsym = coffsym_search(sec_symtab, name);
 	coffreloc_redirect_add(offset, cfsym, sec->index, type);
 }
@@ -294,7 +312,7 @@ void coffreloc_redirect_add(int offset, int cfsym, char section, char type)
  **********************************************************/
 void init_coff()
 {
-	vecSection.resize(8);
+	vecSection.reserve(1024);
 	nsec_image = 0 ;
 	
 	sec_text = section_new(".text",
@@ -328,7 +346,7 @@ void init_coff()
 /***********************************************************
  *  功能:            释放所有节数据
  **********************************************************/
-void free_section()
+void free_sections()
 {
 	int i;
 	Section * sec;
@@ -341,10 +359,15 @@ void free_section()
 	}
 }
 
+/***********************************************************
+ * 功能:            从当前读写位置到new_pos位置用0填补文件内容
+ * fp:            文件指针
+ * new_pos:            填补终点位置
+ **********************************************************/
 void fpad(FILE * fp, int new_pos)
 {
-	int curpos = ftell(fp);
-	while (++curpos <= new_pos)
+	int cur_pos = ftell(fp);
+	while (++cur_pos <= new_pos)
 	{
 		fputc(0, fp);
 	}
@@ -365,7 +388,7 @@ void write_obj(char * name)
 	sh_size  = sizeof(IMAGE_SECTION_HEADER);
 	file_offset = sizeof(IMAGE_FILE_HEADER) + nsec_obj * sh_size;
 	fpad(fout, file_offset);
-	fh = (IMAGE_FILE_HEADER *)malloc(sizeof(IMAGE_FILE_HEADER));
+	fh = (IMAGE_FILE_HEADER *)mallocz(sizeof(IMAGE_FILE_HEADER));
 	// Write File Sections
 	for(i = 0; i < nsec_obj; i++)
 	{
@@ -393,11 +416,11 @@ void write_obj(char * name)
 	fclose(fout);
 }
 
-/***********************************************************
- * 功能:            从当前读写位置到new_pos位置用0填补文件内容
- * fp:            文件指针
- * new_pos:            填补终点位置
- **********************************************************/
-
-
+// int main(int argc, char* argv[])
+// {
+//	init_coff();
+//	write_obj("write_obj.obj"); 
+//	free_sections();
+//	return 0;
+//}
 

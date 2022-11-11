@@ -159,7 +159,7 @@ void mk_pointer(Type *t)
 {
 	Symbol *s;
     s = sym_push(SC_ANOM, t, 0, -1);
-    t->t = T_PTR ;
+    t->type = T_PTR ;
     t->ref = s;
 }
 
@@ -230,7 +230,7 @@ void direct_declarator_postfix(Type * type, int func_call)
 		skip_token(TK_CLOSEBR);
 		direct_declarator_postfix(type, func_call);    // Nesting calling
 		s = sym_push(SC_ANOM, type, 0, n);
-		type->t = T_ARRAY | T_PTR;
+		type->type = T_ARRAY | T_PTR;
 		type->ref = s;
 	}
 }
@@ -291,7 +291,7 @@ void parameter_type_list(Type * type, int func_call) // (int func_call)
 	
 	s = sym_push(SC_ANOM, type, func_call, 0);
 	s->next = first;
-	type->t = T_FUNC;
+	type->type = T_FUNC;
 	type->ref = s;
 }
 
@@ -319,20 +319,21 @@ void func_body(Symbol * sym)
 void print_all_stack(char* strPrompt)
 {
 	int i;
+	return;
 	printf("\n-------------------%s---------------------------\n", strPrompt);
 	for(i = 0; i < global_sym_stack.size(); ++i)
 	{
 		printf("\t global_sym_stack[%d].v = %08X c = %d type = %d\n", i, 
-			global_sym_stack[i].v, 
-			global_sym_stack[i].c, 
-			global_sym_stack[i].type);
+			global_sym_stack[i].token_code, 
+			global_sym_stack[i].related_value, 
+			global_sym_stack[i].typeSymbol);
 	}
 	for(i = 0; i < local_sym_stack.size(); ++i)
 	{
 		printf("\t  local_sym_stack[%d].v = %08X c = %d type = %d\n", i, 
-			local_sym_stack[i].v, 
-			local_sym_stack[i].c, 
-			local_sym_stack[i].type);
+			local_sym_stack[i].token_code, 
+			local_sym_stack[i].related_value, 
+			local_sym_stack[i].typeSymbol);
 	}
 	printf("\t tktable.size = %d \n --- ", tktable.size());
 	for (i = 40; i < tktable.size(); i++)
@@ -346,9 +347,9 @@ void print_all_stack(char* strPrompt)
 /***********************************************************
 * <initializer> ::= <assignment_expression>
 *********************************************/
-void initializer(Type * type, int c, Section * sec)
+void initializer(Type * typeToken, int c, Section * sec)
 {
-	if(type->t & T_ARRAY)
+	if(typeToken->type & T_ARRAY)
 	{
 		memcpy(sec->data + c, get_current_token(), strlen(get_current_token()));
 		get_token();
@@ -356,7 +357,7 @@ void initializer(Type * type, int c, Section * sec)
 	else
 	{
 		assignment_expression();
-		init_variable(type, sec, c, 0);
+		init_variable(typeToken, sec, c, 0);
 	}
 }
 
@@ -766,24 +767,32 @@ void sizeof_expression()
 		print_error("sizeof failed.");
 }
 
-int type_size(Type * type, int * align)
+int type_size(Type * typeCal, int * align)
 {
 	Symbol *s;
 	int bt;
 	int PTR_SIZE = 4;
-	bt = type->t & T_BTYPE;
+	bt = typeCal->type & T_BTYPE;
 	switch(bt)
 	{
 	case T_STRUCT:
-		s = type->ref;
-		*align = s->r;
-		return s->c ;
+		s = typeCal->ref;
+		*align = s->storage_class;
+		return s->related_value ;
 	case T_PTR:
-		if(type->t & T_ARRAY)
+		// 如果是指针数组。这里分两种情况。
+		// 1. 一个是数组变量，类似于int AA[717]。
+		//    这种情况下，长度等于typeSymbol的大小乘以related_value，
+		//    例如int AA[717]的长度就是4 * 717 = 2868。
+		// 2. 一个是数组常量，类似于"Hello world!"这种字符串。
+        //    这种情况下，related_value等于-1。直接返回负数。由上层处理。
+		//    因为这种情况下，长度可以通过token直接计算。
+		if(typeCal->type & T_ARRAY)
 		{
-			s = type->ref;
-			return type_size(&s->type, align) * s->c;
+			s = typeCal->ref;
+			return type_size(&s->typeSymbol, align) * s->related_value;
 		}
+		// 否则指针的长度为32位，也就是4。
 		else
 		{
 			*align = PTR_SIZE;
@@ -795,7 +804,7 @@ int type_size(Type * type, int * align)
 	case T_SHORT:
 		*align = 2;
 		return 2 ;
-	default:			// char, void, fucntion
+	default:			// char, void, function
 		*align = 1;
 		return 1 ;
 	}
@@ -849,7 +858,7 @@ void primary_expression()
 	// 这个函数主要用于在空间不够的时候，分配节的空间，同时返回当前符号在节中的存储位置。
 	// 这里的节是一个可执行程序中的概念。例如代码节，数据节，符号表节。
 	int t , r, addr = 0;
-	Type type;
+	Type typeExpression;
 	Symbol *s ;
 	Section * sec = NULL;
 	
@@ -861,11 +870,13 @@ void primary_expression()
 	case TK_CSTR:
 		// get_token();
 		t = T_CHAR;
-		type.t = t;
-		mk_pointer(&type);
-		type.t |= T_ARRAY;
-		var_sym_put(&type, SC_GLOBAL, 0, addr);
-		initializer(&type, addr, sec);
+		typeExpression.type = t;
+		mk_pointer(&typeExpression);
+		typeExpression.type |= T_ARRAY;
+		// 字符串常量在.rdata节分配存储空间
+        sec = allocate_storage(&typeExpression,SC_GLOBAL, 2, 0, &addr);
+		var_sym_put(&typeExpression, SC_GLOBAL, 0, addr);
+		initializer(&typeExpression, addr, sec);
 		break;
 	case TK_OPENPA:
 		get_token();
@@ -893,7 +904,7 @@ void primary_expression()
 				// print_error(testStr);
 			}
 			s = func_sym_push(t, &default_func_type);
-			s->r = SC_GLOBAL | SC_SYM;
+			s->storage_class = SC_GLOBAL | SC_SYM;
 		}
 		break;
 	}
@@ -986,7 +997,7 @@ void struct_declaration_list(Type * type)
 	get_token();
 	// Adding Symbol operation
 	s = type->ref;
-	if (s->c != -1)
+	if (s->related_value != -1)
 	{
 		print_error("Has defined");
 	}
@@ -1000,8 +1011,8 @@ void struct_declaration_list(Type * type)
 	}
 	skip_token(TK_END);
 	// syntax_state = SNTX_LF_HT;
-	s->c = calc_align(offset, maxalign);
-	s->r = maxalign;
+	s->related_value = calc_align(offset, maxalign);
+	s->storage_class = maxalign;
 }
 
 /************************************************************************/
@@ -1009,14 +1020,14 @@ void struct_declaration_list(Type * type)
 /*                         <struct_declaration_list><TK_END>            */
 /*                       | <KW_STRUCT><IDENTIFIER>                      */
 /************************************************************************/
-void struct_specifier(Type * type)
+void struct_specifier(Type * typeStruct)
 {
-	int v ;
+	int token_code ;
 	Symbol * s;
 	Type typeOne;
 	
 	get_token();		// Get struct name <IDENTIFIER>
-	v = get_current_token_type();
+	token_code = get_current_token_type();
 	syntax_state = SNTX_DELAY;
 	// DELAY disable print in the get_token
 	get_token(); // Get token after the struct name
@@ -1029,24 +1040,24 @@ void struct_specifier(Type * type)
 		syntax_state = SNTX_SP;
 
 	syntax_indent();
-	if (v < TK_IDENT)  // Key word is illegal
+	if (token_code < TK_IDENT)  // Key word is illegal
 	{
 		print_error("Need struct name\n");
 	}
 	// Adding Symbol operation
-	s = struct_search(v);
+	s = struct_search(token_code);
 	if (!s)
 	{
-		typeOne.t = T_STRUCT;
-		s = sym_push(v | SC_STRUCT, &typeOne, 0, -1);
-		s->r = 0;
+		typeOne.type = T_STRUCT;
+		s = sym_push(token_code | SC_STRUCT, &typeOne, 0, -1);
+		s->storage_class = 0;
 	}
-	type->t = T_STRUCT;
-	type->ref = s;
+	typeStruct->type = T_STRUCT;
+	typeStruct->ref = s;
 	// end of Adding Symbol operation
 	if (get_current_token_type() == TK_BEGIN)
 	{
-		struct_declaration_list(type);
+		struct_declaration_list(typeStruct);
 	}
 }
 
@@ -1054,49 +1065,49 @@ void struct_specifier(Type * type)
 /* <type_specifier> ::= <KW_CHAR> | <KW_SHORT>                          */
 /*                    | <KW_VOID> | <KW_INT> | <struct_specifier>       */
 /************************************************************************/
-int type_specifier(Type * type)
+int type_specifier(Type * typeSpec)
 {
-	e_TypeCode t;
+	e_TypeCode typeCode;
 	int type_found = 0 ;
 	Type typeStruct;
-	t = T_INT ;
+	typeCode = T_INT ;
 	
 	switch(get_current_token_type()) {
 	case KW_CHAR:    // All of simple_type
-		t = T_CHAR;
+		typeCode = T_CHAR;
 		// syntax_state = SNTX_SP;
 		type_found = 1;
 		get_token();
 		break;
 	case KW_SHORT:
-		t = T_SHORT;
+		typeCode = T_SHORT;
 		// syntax_state = SNTX_SP;
 		type_found = 1;
 		get_token();
 		break;
 	case KW_VOID:
-		t = T_VOID;
+		typeCode = T_VOID;
 		// syntax_state = SNTX_SP;
 		type_found = 1;
 		get_token();
 		break;
 	case KW_INT:
-		t = T_INT;
+		typeCode = T_INT;
 		// syntax_state = SNTX_SP;
 		type_found = 1;
 		get_token();
 		break;
 	case KW_STRUCT:
-		t = T_STRUCT;
+		typeCode = T_STRUCT;
 		// syntax_state = SNTX_SP;
 		type_found = 1;
 		struct_specifier(&typeStruct);
-		type->ref = typeStruct.ref;
+		typeSpec->ref = typeStruct.ref;
 		break;
 	default:
 		break;
 	}
-	type->t = t;
+	typeSpec->type = typeCode;
 	return type_found ;
 }
 
@@ -1114,13 +1125,15 @@ int type_specifier(Type * type)
 void external_declaration(e_StorageClass iSaveType)
 {
 	Type bTypeCurrent, typeCurrent ;
-	// v:	符号编号。类型为e_TokenCode。
-	int v = -1; // , has_init, addr;
+	// v:	符号编号。类型为e_TokenCode。这里改为symbol_index。
+	// int v = -1; // , has_init, addr;
+	int symbol_index = -1; 
 	
 	// 这里的addr暂时没有用到。这个是用法是首先调用allocate_storage函数，从这个函数中获得。
 	// 这个函数主要用于在空间不够的时候，分配节的空间，同时返回当前符号在节中的存储位置。
 	// 这里的节是一个可执行程序中的概念。例如代码节，数据节，符号表节。
-	int has_init, r, addr = 0;
+	// int has_init, r, addr = 0;
+	int has_init, storage_class, addr = 0;
 	Symbol * sym;
 	Section * sec = NULL;
 	print_all_stack("Starting external_declaration");
@@ -1130,7 +1143,7 @@ void external_declaration(e_StorageClass iSaveType)
 	}
 	// 因此上，如果前面type_specifier有处理结构体，这时bTypeCurrent.t就会等于T_STRUCT。
 	// 这说明这一次，我们处理完了一个外部声明。我们就返回。
-	if (bTypeCurrent.t = T_STRUCT && get_current_token_type() == TK_SEMICOLON)
+	if (bTypeCurrent.type = T_STRUCT && get_current_token_type() == TK_SEMICOLON)
 	{
 		print_all_stack("End external_declaration");
 		get_token();
@@ -1141,7 +1154,7 @@ void external_declaration(e_StorageClass iSaveType)
 	while (1)
 	{
 		typeCurrent = bTypeCurrent;
-		declarator(&typeCurrent, &v, NULL);
+		declarator(&typeCurrent, &symbol_index, NULL);
 		// 函数定义
 		if (get_current_token_type() == TK_BEGIN)
 		{
@@ -1151,30 +1164,30 @@ void external_declaration(e_StorageClass iSaveType)
 				print_error("Not nesting function\n");
 			}
 			// 声明后面跟着括号。必须是函数。否则就报错。
-			if((typeCurrent.t & T_BTYPE) != T_FUNC)
+			if((typeCurrent.type & T_BTYPE) != T_FUNC)
 			{
 				print_error("Needing function defination\n");
 			}
 			// 如果查找到了这个符号。说明前面进行了函数定义。
-			sym = sym_search(v);
+			sym = sym_search(symbol_index);
 			if(sym)
 			{
 				// 如果发现前面定义的不是函数定义。而是一个变量定义，就报错退出。
-				if((sym->type.t & T_BTYPE) != T_FUNC)
+				if((sym->typeSymbol.type & T_BTYPE) != T_FUNC)
 				{
 					char tmpStr[128];
 					sprintf(tmpStr, "Function %s redefination\n", get_current_token());
 					print_error(tmpStr);
 				}
-				sym->type = typeCurrent;
+				sym->typeSymbol = typeCurrent;
 			}
 			// 如果没有找到，就直接添加。
 			else
 			{
-				sym = func_sym_push(v, &typeCurrent);
+				sym = func_sym_push(symbol_index, &typeCurrent);
 			}
 			// 全局普通符号。
-			sym->r = SC_SYM | SC_GLOBAL;
+			sym->storage_class = SC_SYM | SC_GLOBAL;
 			print_all_stack("Enter funtion body");
 			func_body(sym);
 			break;
@@ -1182,32 +1195,38 @@ void external_declaration(e_StorageClass iSaveType)
 		else
 		{
 			// 函数声明
-			if((typeCurrent.t & T_BTYPE) != T_FUNC)
+			if((typeCurrent.type & T_BTYPE) == T_FUNC)
 			{
-				if (sym_search(v) == NULL)
+				if (sym_search(symbol_index) == NULL)
 				{
-					sym = sym_push(v, &typeCurrent, SC_GLOBAL | SC_SYM, 0);
+					sym = sym_push(symbol_index, &typeCurrent, SC_GLOBAL | SC_SYM, 0);
 				}
 			}
 			// 变量声明
 			else
 			{
-			    r = 0;
+			    storage_class = 0;
 				// 如果是数组。就只能是左值。
-				if(!(typeCurrent.t & T_ARRAY))
+				if(!(typeCurrent.type & T_ARRAY))
 				{
-					r |= SC_LVAL;
+					storage_class |= SC_LVAL;
 				}
-				r |= iSaveType;
+				storage_class |= iSaveType;
 				// 如果变量声明的时候同时做了赋初值。执行赋初值操作。
-				if (get_current_token_type() == TK_ASSIGN)  // int a = 5 ;
+				// if (get_current_token_type() == TK_ASSIGN)  // int a = 5 ;
+				has_init = (get_current_token_type() == TK_ASSIGN);
+				// 这里的这句if(has_init)其实可以等价于：
+				//     if (get_current_token_type() == TK_ASSIGN)
+				// 但是这个判断用的太多了。于是这里提出来。
+				// 同时，这个判断是不受get_token影响的。
+				if(has_init)
 				{
 					get_token();
 				//	initializer(&typeCurrent);
 				}
-				// 添加符号。
-			    sec = allocate_storage(&typeCurrent, r, has_init, v, &addr);
-				sym = var_sym_put(&typeCurrent, r, v, addr);
+				// 首先为符号分配空间，之后添加符号。
+			    sec = allocate_storage(&typeCurrent, storage_class, has_init, symbol_index, &addr);
+				sym = var_sym_put(&typeCurrent, storage_class, symbol_index, addr);
 			    if (iSaveType == SC_GLOBAL)
 			    {
 				    coffsym_add_update(sym, addr, sec->index, 0, IMAGE_SYM_CLASS_EXTERNAL);
@@ -1242,55 +1261,69 @@ void external_declaration(e_StorageClass iSaveType)
 /* addr(输出) ：变量存储地址                                            */
 /* 返回值：变量存储节                                                   */
 /************************************************************************/
-Section * allocate_storage(Type * type, int r, int has_init, int v, int *addr)
+Section * allocate_storage(Type * typeCurrent, int storage_class, int has_init, int token_code, int *addr)
 {
 	int size, align;
 	Section * sec= NULL;
-	size = type_size(type, &align);
+	size = type_size(typeCurrent, &align);
 
 	if (size < 0)
 	{
-		if (type->t & T_ARRAY 
-			&& type->ref->type.t == T_CHAR)
+		if (typeCurrent->type & T_ARRAY 
+			&& typeCurrent->ref->typeSymbol.type == T_CHAR)
 		{
-			type->ref->c = strlen((char *)get_current_token()) + 1;
-			size = type_size(type, &align);
+			typeCurrent->ref->related_value = strlen((char *)get_current_token()) + 1;
+			size = type_size(typeCurrent, &align);
 		}
 		else
 			print_error("Unknown size of type");
 	}
 
-	if ((r & SC_VALMASK) == SC_LOCAL)
+	// 局部变量在栈中分配存储空间
+	if ((storage_class & SC_VALMASK) == SC_LOCAL)
 	{
 		loc = calc_align(loc - size, align);
 		*addr = loc;
 	}
 	else
 	{
-		if (has_init == 1)
+		// 初始化的全局变量在.data节分配存储空间
+		// 通过判断(get_current_token_type() == TK_ASSIGN)得到。
+		if (has_init == SEC_DATA_STORAGE)
 		{
 			sec = sec_data;
 		}
-		else if (has_init == 2)
+		// 字符串常量在.rdata节分配存储空间
+		// 代码位于primary_expression的TK_CSTR分支。
+		else if (has_init == SEC_RDATA_STORAGE)	
 		{
 			sec = sec_rdata;
 		}
-		else
+		// 未初始化的全局变量在.bss节分配存储空间
+		// 通过判断(get_current_token_type() == TK_ASSIGN)得到。
+		// (has_init == SEC_BSS_STORAGE)
+		else if (has_init == SEC_BSS_STORAGE)	
 		{
 			sec = sec_bss;
+		}
+		else
+		{
+			print_error("Illegal section defination");
 		}
 		sec->data_offset = calc_align(sec->data_offset, align);
 		*addr = sec->data_offset;
 		sec->data_offset += size;
-
+		
+		// 为需要初始化的数据在节中分配存储空间
 		if (sec->sh.Characteristics & IMAGE_SCN_CNT_INITIALIZED_DATA
 			&& sec->data_offset > sec->data_allocated)
 		{
 			section_realloc(sec, sec->data_offset);
 		}
-		if (v == 0)
+		// 常量字符串
+		if (token_code == 0)
 		{
-			operand_push(type, SC_GLOBAL | SC_SYM, *addr);
+			operand_push(typeCurrent, SC_GLOBAL | SC_SYM, *addr);
 		//	operand_stack_top->sym = sec_rdata;
 		}
 	}

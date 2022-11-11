@@ -8,19 +8,20 @@
 typedef struct structType
 {
     // e_TypeCode t;
-	int    t;
+	int    type;
     struct Symbol *ref;
 } Type;
 
 /* 符号存储结构定义 */
 typedef struct Symbol 
 {
-    int v;						// 符号的单词编码 e_TokenCode
-    int r;						// 符号关联的寄存器存储类型 e_StorageClass
-    int c;						// 符号关联值。
+    int token_code;				// 符号的单词编码 e_TokenCode
+    int storage_class;			// 符号关联的寄存器存储类型 e_StorageClass
+    int related_value;			// 符号关联值。
 	                            // 这个关联值据我观察，应该如果是变量，则会记录变量的值。
 	                            // 如果是结构体，记录结构体的大小，如果是数组，记录数组元素个数。
-    Type type;					// 符号类型
+								// 如果是静态字符串。则会被当成数组指针。此时这个的值为-1。
+    Type typeSymbol;			// 符号类型
     struct Symbol *next;		// 关联的其它符号，结构体定义关联成员变量符号，函数定义关联参数符号
     struct Symbol *prev_tok;	// 指向前一定义的同名符号
 } Symbol;
@@ -78,4 +79,6 @@ Symbol * sec_sym_put(char * sec, int c);
 
 void print_all_stack(char* strPrompt);
 void mk_pointer(Type *t);
+
+void init();
 #endif

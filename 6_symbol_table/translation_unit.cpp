@@ -1148,7 +1148,7 @@ void external_declaration(e_StorageClass iSaveType)
 		else
 		{
 			// º¯ÊýÉùÃ÷
-			if((typeCurrent.t & T_BTYPE) != T_FUNC)
+			if((typeCurrent.t & T_BTYPE) == T_FUNC)
 			{
 				if (sym_search(v) == NULL)
 				{

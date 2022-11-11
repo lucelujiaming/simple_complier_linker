@@ -90,6 +90,15 @@ SOURCE=.\coff_generator.cpp
 # Begin Source File
 
 SOURCE=.\get_token.cpp
+
+!IF  "$(CFG)" == "semantic_analyser - Win32 Release"
+
+!ELSEIF  "$(CFG)" == "semantic_analyser - Win32 Debug"
+
+# SUBTRACT CPP /YX /Yc /Yu
+
+!ENDIF 
+
 # End Source File
 # Begin Source File
 

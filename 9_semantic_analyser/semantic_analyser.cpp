@@ -5,13 +5,15 @@
 #include "get_token.h"
 #include "translation_unit.h"
 
-
 int main(int argc, char* argv[])
 {
+	init();
+	init_coff();
 	token_init(argv[1]);
 	get_token();
 	translation_unit();
 	printf("Hello World!\n");
+	free_sections();
 	token_cleanup();
 	return 0;
 }

@@ -7,6 +7,12 @@
 
 #define MAXKEY	1024				// 哈希表容量
 
+enum{
+	SEC_BSS_STORAGE   = 0,
+	SEC_DATA_STORAGE  = 1,
+	SEC_RDATA_STORAGE = 2
+};
+
 typedef struct Section_t{
 	int data_offset;           //当前数据偏移位置     
 	char * data;               //节数据
@@ -49,4 +55,9 @@ void section_realloc(Section * sec, int new_size);
 void coffreloc_add(Section * sec, Symbol * sym, int offset, char type);
 void coffsym_add_update(Symbol *s, int val, int sec_index,
 		short type, char StorageClass);
+
+void init_coff();
+void write_obj(char * name);
+void free_sections();
+
 #endif
