@@ -90,6 +90,7 @@ Symbol * sym_push(int v, Type * type, int r, int c)
 
 		ps->prev_tok = *pps;
 		*pps = ps;
+		tktable[v & ~SC_STRUCT] = *ts;
 	}
 	return ps;
 }
@@ -188,6 +189,7 @@ void sym_pop(std::vector<Symbol> * pop, Symbol *b)
 				ps = &ts->sym_identifier;
 
 			*ps = s->prev_tok ;
+			tktable[v & ~SC_STRUCT] = *ts;
 		}
 		// pop->erase(pop->begin());
 		pop->pop_back();

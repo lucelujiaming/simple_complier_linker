@@ -90,6 +90,9 @@ Symbol * sym_push(int token_code, Type * type, int storage_class, int related_va
 
 		ps->prev_tok = *pps;
 		*pps = ps;
+		tktable[token_code & ~SC_STRUCT] = *ts;
+		printf("sym_push:: (%s, %08X, %08X) \n", tktable[token_code & ~SC_STRUCT].spelling, 
+			tktable[token_code & ~SC_STRUCT].sym_struct, tktable[token_code & ~SC_STRUCT].sym_identifier);
 	}
 	return ps;
 }
@@ -188,6 +191,9 @@ void sym_pop(std::vector<Symbol> * pop, Symbol *b)
 				ps = &ts->sym_identifier;
 
 			*ps = s->prev_tok ;
+			tktable[token_code & ~SC_STRUCT] = *ts;
+			printf("sym_pop:: (%s, %08X, %08X) \n", tktable[token_code & ~SC_STRUCT].spelling, 
+				tktable[token_code & ~SC_STRUCT].sym_struct, tktable[token_code & ~SC_STRUCT].sym_identifier);
 		}
 		// pop->erase(pop->begin());
 		pop->pop_back();
@@ -207,6 +213,12 @@ void sym_pop(std::vector<Symbol> * pop, Symbol *b)
  **********************************************************/
 Symbol * struct_search(int v)
 {
+	printf("\n -- struct_search -- ");
+	for (int i = 42; i < tktable.size(); i++)
+	{
+		printf(" (%s, %08X, %08X) ", tktable[i].spelling, tktable[i].sym_struct, tktable[i].sym_identifier);
+	}
+	printf(" ---- \n");
 	if(tktable.size() > v)
 		return tktable[v].sym_struct;
 	else

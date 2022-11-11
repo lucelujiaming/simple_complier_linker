@@ -37,13 +37,6 @@ typedef struct TkWord
     struct Symbol *sym_identifier;	// 指向单词所表示的标识符
 } TkWord;
 
-typedef struct Operand_t{
-	Type type;              // 数据类型
-	unsigned short r;       // 寄存器或存储类型
-	int value;              // 常量值
-	struct Symbol * sym;    // 关联符号
-} Operand;
-
 /* 寄存器编码 */
 enum e_Register
 {

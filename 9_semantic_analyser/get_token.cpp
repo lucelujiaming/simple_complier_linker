@@ -565,7 +565,13 @@ TkWord* tkword_insert(char * strNewToken) // , e_TokenCode tokenCode)
 //	if(token_type == TK_CSTR)
 //			tktable.push_back(std::string(strNewToken));
 	TkWord tkWord;
-	for (int i = 0; i < tktable.size(); i++)
+	printf("\n -- tkword_insert -- ");
+	for (int i = 42; i < tktable.size(); i++)
+	{
+		printf(" (%s, %08X, %08X) ", tktable[i].spelling, tktable[i].sym_struct, tktable[i].sym_identifier);
+	}
+	printf(" ---- \n");
+	for (i = 0; i < tktable.size(); i++)
 	{
 		// printf("tktable[%d].spelling = %s \n", i, tktable[i].spelling);
 		if (!strcmp(tktable[i].spelling,strNewToken))

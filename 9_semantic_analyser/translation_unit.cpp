@@ -964,8 +964,8 @@ void struct_member_declaration(int * maxalign, int * offset, Symbol *** ps)
 			*maxalign = align;
 		}
 		ss = sym_push(v | SC_MEMBER, &typeOne, 0, *offset);
-		* offset = size;
-		** ps = ss;
+		*offset += size;
+		**ps = ss;
 		*ps = &ss->next;
 		// end of Adding Symbol operation
 
@@ -1143,7 +1143,7 @@ void external_declaration(e_StorageClass iSaveType)
 	}
 	// 因此上，如果前面type_specifier有处理结构体，这时bTypeCurrent.t就会等于T_STRUCT。
 	// 这说明这一次，我们处理完了一个外部声明。我们就返回。
-	if (bTypeCurrent.type = T_STRUCT && get_current_token_type() == TK_SEMICOLON)
+	if (bTypeCurrent.type == T_STRUCT && get_current_token_type() == TK_SEMICOLON)
 	{
 		print_all_stack("End external_declaration");
 		get_token();
