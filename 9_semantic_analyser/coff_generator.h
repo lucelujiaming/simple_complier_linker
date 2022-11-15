@@ -42,6 +42,9 @@ typedef struct CoffSym
     BYTE    numberOfAuxSymbols;	// 跟在本记录后面的辅助符号表项的个数
 } CoffSym;
 
+#define CST_FUNC    0x20  //Coff符号类型，函数
+#define CST_NOTFUNC 0     //Coff符号类型，非函数
+
 /* 重定位结构定义 */
 typedef struct CoffReloc 
 {

@@ -9,9 +9,16 @@
 #include "x86_generator.h"
 
 #define OPERAND_STACK_SIZE    1024
+#define FUNC_PROLOG_SIZE      9
 
-int loc = 0 ; 
-int ind = 0 ;  // It should be the written offset of Section .
+/* 本章用到的全局变量 */
+int rsym;						// 记录return指令位置
+int ind = 0;					// 指令在代码节位置
+int loc = 0;					// 局部变量在栈中位置
+int func_begin_ind;				// 函数开始指令
+int func_ret_sub;				// 函数返回释放栈空间大小
+Symbol *sym_sec_rdata;			// 只读节符号
+
 std::vector<Operand> operand_stack;
 std::vector<Operand>::iterator operand_stack_top = NULL;
 std::vector<Operand>::iterator operand_stack_second = NULL;
@@ -29,13 +36,7 @@ extern  Section *sec_text,			// 代码节
 Type char_pointer_type,		// 字符串指针				
 	 int_type,				// int类型
 	 default_func_type;		// 缺省函数类型
-// Operand functions
-void gen_opInteger(int op);
-void gen_opTwoInteger(int opc, int op);
-int pointed_size(Type * type);
-void spill_reg(char c);
-void spill_regs();
-void gen_call();
+
 /************************************************************************/
 /*  功能：操作数入栈                                                    */
 /*  type：操作数数据类型                                                */
@@ -104,9 +105,6 @@ void operand_assign(Operand * opd, int token_code, int storage_class, int value)
 }
 
 // Operation generation functions
-
-void gen_dword(unsigned int c);
-void gen_addr32(int r, Symbol * sym, int c);
 /************************************************************************/
 /*  功能：向代码节写人一个字节                                          */
 /*  c：字节值                                                           */
@@ -651,6 +649,68 @@ int gen_jcc(int t)
 }
 
 /***********************************************************
+ * 功能:		生成函数开头代码
+ * func_type:	函数类型
+ * 这个函数的逻辑是这样的。就是这里不真的生成函数开头代码。
+ * 只是记录函数体开始的位置，等到函数体结束时，在函数gen_epilog中填充。
+ **********************************************************/
+void gen_prolog(Type *func_type)
+{
+	int addr, align, size, func_call;
+	int param_addr;
+	Symbol * sym;
+	Type * type;
+
+	sym = func_type->ref;
+	func_call = sym->storage_class;
+	addr = 8;
+	loc  = 0;
+	// 记录了函数体开始，以便函数体结束时填充函数头，因为那时才能确定开辟的栈大小。
+	func_begin_ind = ind;
+	ind += FUNC_PROLOG_SIZE;
+
+	if (sym->typeSymbol.type == T_STRUCT)
+	{
+		print_error("Can not return T_STRUCT");
+	}
+
+	while ((sym = sym->next) != NULL)
+	{
+		type = &sym->typeSymbol;
+		size = type_size(type, &align);
+		// 参数压栈以4字节对齐
+		size = calc_align(size, 4);
+		// 结构体作为指针传递
+		if ((type->type & T_BTYPE) == T_STRUCT)
+		{
+			size = 4;
+		}
+		param_addr = addr;
+		addr += size;
+
+		sym_push(sym->token_code & ~SC_PARAMS, type,
+			SC_LOCAL | SC_LVAL, param_addr);
+	}
+	func_ret_sub = 0;
+	if(func_call == KW_STDCALL)
+		func_ret_sub = addr - 8;
+}
+
+/***********************************************************
+ * 功能:	生成函数结尾代码
+ * 这个函数的逻辑是这样的。就是对于函数开头代码和结尾代码。
+ * 他是首先生成结尾代码。之后通过func_begin_ind获取到函数头，再填充函数开头代码。
+ **********************************************************/
+void gen_epilog()
+{
+	int v, saved_ind, opc;
+	gen_opcodeOne((char)0x8B);
+	gen_modrm(ADDR_REG, REG_ESP, REG_EBP, NULL, 0);
+
+	gen_opcodeOne(0x58 + REG_EBP);
+}
+
+/***********************************************************
  * 功能:	调用完函数后恢复/释放栈,对于__cdecl
  * val:		需要释放栈空间大小(以字节计)
  **********************************************************/
@@ -677,7 +737,7 @@ void gen_addsp(int val)
 /* 功能：生成函数调用代码， 先将参数人栈， 然后生成call指令             */
 /* nb_args：参数个数                                                    */
 /************************************************************************/
-void gen_invke(int nb_args)
+void gen_invoke(int nb_args)
 {
 	int size, r, args_size, i, func_call;
 	args_size = 0;

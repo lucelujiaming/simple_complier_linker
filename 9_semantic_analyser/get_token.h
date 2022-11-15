@@ -19,5 +19,5 @@ void skip_token(int c);
 
 void syntax_indent();
 void translation_unit();
-
+void print_error(char * strErrInfo);
 #endif

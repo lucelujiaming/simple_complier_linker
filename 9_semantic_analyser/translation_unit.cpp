@@ -20,6 +20,17 @@ extern Section *sec_text,	// 代码节
 		*sec_symtab,		// 符号表节	
 		*sec_dynsymtab;		// 链接库符号节
 
+extern int rsym;						// 记录return指令位置
+extern int ind ;						// 指令在代码节位置
+extern int loc ;						// 局部变量在栈中位置
+extern int func_begin_ind;				// 函数开始指令
+extern int func_ret_sub;				// 函数返回释放栈空间大小
+extern Symbol *sym_sec_rdata;			// 只读节符号
+
+extern std::vector<Operand> operand_stack;
+extern std::vector<Operand>::iterator operand_stack_top;
+extern std::vector<Operand>::iterator operand_stack_second;
+
 extern std::vector<Symbol> global_sym_stack;  //全局符号栈
 extern std::vector<Symbol> local_sym_stack;   //局部符号栈
 extern std::vector<TkWord> tktable;
@@ -303,17 +314,35 @@ void parameter_type_list(Type * type, int func_call) // (int func_call)
  ***********************/
 void func_body(Symbol * sym)
 {
-	/* 放一个匿名符号到局部符号表中 */
+	// 1. 增加或更新COFF符号
+	ind = sec_text->data_offset;
+	coffsym_add_update(sym, ind, sec_text->index, CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
+	
+	/* 2. 放一个匿名符号到局部符号表中 */
 	sym_direct_push(local_sym_stack, SC_ANOM, &int_type, 0);
-	print_all_stack("sym_push local_sym_stack");
+
+	// 3. 生成函数开头代码。
+	gen_prolog(&(sym->typeSymbol));
+	rsym = 0;
+
+	// 4. 调用复合语句处理函数处理函数体中的语句。
+	// print_all_stack("sym_push local_sym_stack");
 	compound_statement(NULL, NULL);
-	print_all_stack("Left local_sym_stack");
+	// print_all_stack("Left local_sym_stack");
+
+	// 5. 函数返回后，回填返回地址。
+	backpatch(rsym, ind);
+	
+	// 6. 生成函数结尾代码。
+	gen_epilog();
+	sec_text->data_offset = ind;
+
+	/* 7. 清空局部符号表栈 */
 	if(local_sym_stack.size() > 0)
 	{
-		/* 清空局部符号表 */
 		sym_pop(&local_sym_stack, NULL);
 	}
-	print_all_stack("Clean local_sym_stack");
+	// print_all_stack("Clean local_sym_stack");
 }
 
 void print_all_stack(char* strPrompt)
@@ -349,7 +378,7 @@ void print_all_stack(char* strPrompt)
 *********************************************/
 void initializer(Type * typeToken, int c, Section * sec)
 {
-	if(typeToken->type & T_ARRAY)
+	if((typeToken->type & T_ARRAY) && sec)
 	{
 		memcpy(sec->data + c, get_current_token(), strlen(get_current_token()));
 		get_token();
@@ -370,7 +399,70 @@ void initializer(Type * typeToken, int c, Section * sec)
 /************************************************************************/
 void init_variable(Type * type, Section * sec, int c, int v)
 {
+	// 2022/11/14
+	int bt;
+	void * ptr;
+	if (sec)
+	{
+		if(operand_stack_top)
+		{
+			if ((operand_stack_top->r &(SC_VALMASK | SC_LVAL)) != SC_GLOBAL)
+			{
+				print_error("Use constant to initialize the global variable");
+			}
+		}
+		bt = type->type & T_BTYPE;
+		ptr = sec->data + c;
+		
+		switch(bt) {
+		case T_CHAR:
+			*(char *)ptr = operand_stack_top->value;
+			break;
+		case T_SHORT:
+			*(short *)ptr = operand_stack_top->value;
+			break;
+		default:
+			if(operand_stack_top)
+			{
+				if(operand_stack_top->r & SC_SYM)
+				{
+					coffreloc_add(sec, operand_stack_top->sym,c, IMAGE_REL_I386_DIR32);
+				}
+			}
+			*(int *)ptr = operand_stack_top->value;
+			break;
+		}
+		operand_pop();
+	}
+	else
+	{
+		if (type->type & T_ARRAY)
+		{
+			operand_push(type, SC_LOCAL | SC_LVAL, c);
+			operand_swap();
+			spill_reg(REG_ECX);
 
+			gen_opcodeOne(0xB8 + REG_ECX);
+			gen_dword(operand_stack_top->type.ref->related_value);
+			gen_opcodeOne(0xB8 + REG_ESI);
+			gen_addr32(operand_stack_top->r, operand_stack_top->sym, operand_stack_top->value);
+			operand_swap();
+			
+			gen_opcodeOne(0x8D);
+			gen_modrm(ADDR_OTHER, REG_EDI, SC_LOCAL, operand_stack_top->sym, operand_stack_top->value);
+
+			gen_prefix((char)0xF3);
+			gen_opcodeOne((char)0xA4);
+			operand_stack_top -= 2;
+		}
+		else
+		{
+			operand_push(type, SC_LOCAL | SC_LVAL, c);
+			operand_swap();
+			store_one();
+			operand_pop();
+		}
+	}
 }
 
 // ------------------ 语句：statement
@@ -865,6 +957,8 @@ void primary_expression()
 	switch(get_current_token_type()) {
 	case TK_CINT:
 	case TK_CCHAR:
+        // operand_push(&int_type, SC_GLOBAL, tkvalue);
+        operand_push(&int_type, SC_GLOBAL, atoi(get_current_token()));
 		get_token();
 		break;
 	case TK_CSTR:
@@ -906,6 +1000,15 @@ void primary_expression()
 			s = func_sym_push(t, &default_func_type);
 			s->storage_class = SC_GLOBAL | SC_SYM;
 		}
+		r = s->storage_class;
+		operand_push(&s->typeSymbol, r, s->related_value);
+        /* 符号引用，操作数必须记录符号地址 */	
+		if(operand_stack_top)
+        if (operand_stack_top->r & SC_SYM) 
+		{   
+			operand_stack_top->sym = s;      
+            operand_stack_top->value = 0;  //用于函数调用，及全局变量引用 printf("g_cc=%c\n",g_cc);
+        }
 		break;
 	}
 }
@@ -1224,15 +1327,22 @@ void external_declaration(e_StorageClass iSaveType)
 					get_token();
 				//	initializer(&typeCurrent);
 				}
-				// 首先为符号分配空间，之后添加符号。
+				// 这里主要做了3项工作：
+				//   (1) 为变量分配存储空间，局部变量存放在栈中，
+				//       全局变量分两类，声明时进行赋值的存放在.data数据节中，
+				//       声明时不进行赋值的存放在.bss节中。
+				// 首先为符号分配空间，
 			    sec = allocate_storage(&typeCurrent, storage_class, has_init, symbol_index, &addr);
+				// 之后添加符号。
 				sym = var_sym_put(&typeCurrent, storage_class, symbol_index, addr);
+				//   (2) 将全局变量放人COFF符号表。
 			    if (iSaveType == SC_GLOBAL)
 			    {
 				    coffsym_add_update(sym, addr, sec->index, 0, IMAGE_SYM_CLASS_EXTERNAL);
 			    }
-
-			    if (get_current_token_type() == TK_ASSIGN)  // int a = 5 ;
+				// (3) 对声明时进行赋值的变量进行初始化。
+				//     如果上一个token是等号，使用当前token进行赋值。
+			    if (has_init)  // int a = 5 ;
 			    {
 				    initializer(&typeCurrent, addr, sec);
 			    }

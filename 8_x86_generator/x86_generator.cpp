@@ -675,7 +675,7 @@ void gen_addsp(int val)
 /* 功能：生成函数调用代码， 先将参数人栈， 然后生成call指令             */
 /* nb_args：参数个数                                                    */
 /************************************************************************/
-void gen_invke(int nb_args)
+void gen_invoke(int nb_args)
 {
 	int size, r, args_size, i, func_call;
 	args_size = 0;

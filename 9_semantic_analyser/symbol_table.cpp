@@ -4,6 +4,7 @@
 #include "stdafx.h"
 #include "get_token.h"
 #include <vector>
+#include "x86_generator.h"
 
 
 std::vector<Symbol> global_sym_stack;  //È«¾Ö·ûºÅÕ»
@@ -331,6 +332,8 @@ void init()
 	mk_pointer(&char_pointer_type);
 	default_func_type.type = T_FUNC;
 //	default_func_type.ref =
+
+	init_coff();
 }
 
 //	int main(int argc, char* argv[])
