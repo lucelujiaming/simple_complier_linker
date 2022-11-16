@@ -4,10 +4,10 @@
 #define OPSTACK_SIZE 256
 
 typedef struct Operand_t{
-	Type type;              // 数据类型
-	unsigned short r;       // 寄存器或存储类型
-	int value;              // 常量值
-	struct Symbol * sym;    // 关联符号
+	Type type;							// 数据类型
+	unsigned short storage_class;       // 寄存器或存储类型
+	int value;							// 常量值
+	struct Symbol * sym;				// 关联符号
 } Operand;
 
 // Operand operation functions
@@ -27,6 +27,7 @@ void gen_dword(unsigned int c);
 void gen_addr32(int r, Symbol * sym, int c);
 void load(int r, Operand * opd);
 void store(int r, Operand * opd);
+int load_one(int rc, Operand * opd);
 void load_two(int rc1, int rc2);
 void store_one();
 void gen_op(int op);
@@ -42,4 +43,9 @@ void spill_regs();
 
 void gen_prolog(Type *func_type);
 void gen_epilog();
+
+int gen_jcc(int t);
+int gen_jmpforward(int t);
+void gen_jmpbackward(int a);
+
 #endif

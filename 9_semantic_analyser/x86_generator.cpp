@@ -14,9 +14,12 @@
 /* 本章用到的全局变量 */
 int rsym;						// 记录return指令位置
 int ind = 0;					// 指令在代码节位置
-int loc = 0;					// 局部变量在栈中位置
+int loc = 0;					// 局部变量在栈中位置。
+								// 因为栈顶是零，这个值基本上一直是一个负数。
+								// 
 int func_begin_ind;				// 函数开始指令
-int func_ret_sub;				// 函数返回释放栈空间大小
+int func_ret_sub;				// 函数返回释放栈空间大小。默认是零。
+								// 但是如果指定了__stdcall关键字，就不是零。
 Symbol *sym_sec_rdata;			// 只读节符号
 
 std::vector<Operand> operand_stack;
@@ -43,7 +46,7 @@ Type char_pointer_type,		// 字符串指针
 /*  r：操作数存储类型                                                   */
 /*  value：操作数值                                                     */
 /************************************************************************/
-void operand_push(Type* type, int r, int value)
+void operand_push(Type* type, int storage_class, int value)
 {
 	Operand operand;
 	if (operand_stack.size() > OPERAND_STACK_SIZE)
@@ -52,7 +55,7 @@ void operand_push(Type* type, int r, int value)
 	}
 
 	operand.type = *type;
-	operand.r    = r;
+	operand.storage_class    = storage_class;
 	operand.value = value;
 	operand_stack.push_back(operand);
 
@@ -100,7 +103,7 @@ void operand_swap()
 void operand_assign(Operand * opd, int token_code, int storage_class, int value)
 {
 	opd->type.type = token_code;
-	opd->r = storage_class;
+	opd->storage_class = storage_class;
 	opd->value = value;
 }
 
@@ -152,9 +155,16 @@ void gen_opcodeTwo(unsigned char first, unsigned char second)
 
 /************************************************************************/
 /* 功能：生成指令寻址方式字节Mod R/M                                    */
+/* 因为一些Opcode并不是完整的Opcode码，它需要ModR/M字节进行辅助。       */
 /* mod：Mod R/M[7：6]                                                   */
+/*       与R/M一起组成32种可能的值一8个寄存器加24种寻址模式             */
 /* reg_opcode：ModR/M[5：3]指令的另外3位操作码源操作数(叫法不准确)      */
+/*       要么指定一个寄存器的值， 要么指定Opcode中额外的3个比特的信息， */
+/*       具体作用在主操作码中指定。                                     */
 /* r_m：Mod R/M[2：0] 目标操作数(叫法不准确)                            */
+/*       可以指定一个寄存器作为操作数，                                 */
+/*       或者和mod部分合起来表示一个寻址模式                            */
+/*       类型为：e_StorageClass                                         */
 /* sym：符号指针                                                        */
 /* c：符号关联值                                                        */
 /************************************************************************/
@@ -162,30 +172,41 @@ void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c)
 {
 	mod <<= 6;
 	reg_opcode <<= 3;
-	if (mod == 0xc0)
+	// mod=11 寄存器寻址 89 E5(11 reg_opcode=100ESP r=101EBP) MOV EBP,ESP
+	// 0xC0转成二进制就是1100 0000
+	if (mod == 0xC0)
 	{
 		gen_byte(mod | reg_opcode | (r_m & SC_VALMASK));
 	}
 	else if ((r_m & SC_VALMASK) == SC_GLOBAL)
 	{
-		gen_byte(0x05 | reg_opcode);
+		// mod=00 r=101 disp32  8b 05 50 30 40 00  MOV EAX,DWORD PTR DS:[403050]
+		// 8B /r MOV r32,r/m32 Move r/m32 to r32
+		// mod=00 r=101 disp32  89 05 14 30 40 00  MOV DWORD PTR DS:[403014],EAX
+		// 89 /r MOV r/m32,r32 Move r32 to r/m32
+		gen_byte(0x05 | reg_opcode); //直接寻址
 		gen_addr32(r_m, sym, c);
 	}
 	else if ((r_m & SC_VALMASK) == SC_LOCAL)
 	{
+		// mod=01 r=101 disp8[EBP] 89 45 fc MOV DWORD PTR SS:[EBP-4],EAX
 		if (c == c)
 		{
+			// 0x45转成二进制就是0100 0101
 			gen_byte(0x45 | reg_opcode);
 			gen_byte(c);
 		}
 		else
 		{
+			// mod=10 r=101 disp32[EBP]
+			// 0x85转成二进制就是1000 0101
 			gen_byte(0x85 | reg_opcode);
 			gen_dword(c);
 		}
 	}
 	else 
 	{
+		// mod=00 89 01(00 reg_opcode=000 EAX r=001ECX) MOV DWORD PTR DS:[ECX],EAX
 		gen_byte(0x00 | reg_opcode | (r_m & SC_VALMASK));
 	}
 }
@@ -221,10 +242,10 @@ void gen_addr32(int r, Symbol * sym, int c)
 /*  r：符号存储类型                                                     */
 /*  opd：操作数指针                                                     */
 /************************************************************************/
-void load(int r, Operand * opd)
+void load(int storage_class, Operand * opd)
 {
 	int v, ft, fc, fr;
-	ft = opd->r;
+	ft = opd->storage_class;
 	fc = opd->type.type;
 	fr = opd->value;
 
@@ -243,31 +264,31 @@ void load(int r, Operand * opd)
 		{
 			gen_opcodeOne(0x8b); // 8B -> mov r32, r/m32
 		}
-		gen_modrm(ADDR_OTHER, r, fr, opd->sym, fc);
+		gen_modrm(ADDR_OTHER, storage_class, fr, opd->sym, fc);
 	}
 	else    // 右值
 	{
 		if (v == SC_GLOBAL)
 		{
-			gen_opcodeOne(0xb8 + r);
+			gen_opcodeOne(0xb8 + storage_class);
 			gen_addr32(fr, opd->sym, fc);
 		}
 		else if (v == SC_LOCAL)
 		{
 			gen_opcodeOne(0x8d);
-			gen_modrm(ADDR_OTHER, r, SC_LOCAL, opd->sym, fc);
+			gen_modrm(ADDR_OTHER, storage_class, SC_LOCAL, opd->sym, fc);
 		}
 		else if (v == SC_CMP)
 		{
-			gen_opcodeOne(0xb8 + r);
+			gen_opcodeOne(0xb8 + storage_class);
 			gen_dword(0);
 			gen_opcodeTwo(0x0f, fc = 16);
-			gen_modrm(ADDR_REG, 0, r, NULL, 0);
+			gen_modrm(ADDR_REG, 0, storage_class, NULL, 0);
 		}
-		else if (v != r)
+		else if (v != storage_class)
 		{
 			gen_opcodeOne(0x89);
-			gen_modrm(ADDR_REG, v, r, NULL, 0);
+			gen_modrm(ADDR_REG, v, storage_class, NULL, 0);
 		}
 	}
 }
@@ -280,7 +301,7 @@ void load(int r, Operand * opd)
 void store(int r, Operand * opd)
 {
 	int fr, bt;
-	fr = opd->r & SC_VALMASK;
+	fr = opd->storage_class & SC_VALMASK;
 	bt = opd->type.type & T_BTYPE;
 
 	if (bt == T_SHORT)
@@ -297,9 +318,9 @@ void store(int r, Operand * opd)
 		gen_opcodeOne(0x89);
 	}
 
-	if (fr == SC_GLOBAL || fr == SC_LOCAL || (opd->r & SC_LVAL))
+	if (fr == SC_GLOBAL || fr == SC_LOCAL || (opd->storage_class & SC_LVAL))
 	{
-		gen_modrm(ADDR_OTHER, r, opd->r, opd->sym, opd->value);
+		gen_modrm(ADDR_OTHER, r, opd->storage_class, opd->sym, opd->value);
 	}
 
 }
@@ -311,15 +332,15 @@ void store(int r, Operand * opd)
 /************************************************************************/
 int load_one(int rc, Operand * opd)
 {
-	int r ;
-	r = opd->r & SC_VALMASK;
-	if (r > SC_GLOBAL || (opd->r & SC_LVAL))
+	int storage_class ;
+	storage_class = opd->storage_class & SC_VALMASK;
+	if (storage_class > SC_GLOBAL || (opd->storage_class & SC_LVAL))
 	{
-	//	r = allocate_reg(rc);
-		load(r, opd);
+	//	storage_class = allocate_reg(rc);
+		load(storage_class, opd);
 	}
-	opd->r = r;
-	return r;
+	opd->storage_class = storage_class;
+	return storage_class;
 }
 
 
@@ -339,18 +360,18 @@ void load_two(int rc1, int rc2)
 /************************************************************************/
 void store_one()
 {
-	int r = 0,t = 0;
-	r = load_one(REG_ANY, operand_stack_top);
-	if ((operand_stack_second->r & SC_VALMASK) == SC_LLOCAL)
+	int storage_class = 0,t = 0;
+	storage_class = load_one(REG_ANY, operand_stack_top);
+	if ((operand_stack_second->storage_class & SC_VALMASK) == SC_LLOCAL)
 	{
 		Operand opd;
 	//	t = allocate_reg(REG_ANY);
 		operand_assign(&opd, T_INT, SC_LOCAL | SC_LVAL, 
 			operand_stack_second->value);
 		load(t, &opd);
-		operand_stack_second->r = t | SC_LVAL;
+		operand_stack_second->storage_class = t | SC_LVAL;
 	}
-	store(r, operand_stack_second);
+	store(storage_class, operand_stack_second);
 	operand_swap();
 	operand_pop();
 }
@@ -441,7 +462,7 @@ void gen_op(int op)
 /************************************************************************/
 void gen_opInteger(int op)
 {
-	int r, fr, opc;
+	int storage_class, fr, opc;
 	switch(op) {
 	case TK_PLUS:
 		opc = 0;
@@ -453,18 +474,18 @@ void gen_opInteger(int op)
 		break;
 	case TK_STAR:
 		load_two(REG_ANY, REG_ANY);
-		r  = operand_stack_second->r;
-		fr = operand_stack_top->r;
+		storage_class  = operand_stack_second->storage_class;
+		fr = operand_stack_top->storage_class;
 		operand_pop();
 		gen_opcodeTwo(0x0f, 0xaf);
-		gen_modrm(ADDR_REG, r, fr, NULL, 0);
+		gen_modrm(ADDR_REG, storage_class, fr, NULL, 0);
 		break;
 	case TK_DIVIDE:
 	case TK_MOD:
 		opc = 7;
 		load_two(REG_EAX, REG_ECX);
-		r  = operand_stack_second->r;
-		fr = operand_stack_top->r;
+		storage_class  = operand_stack_second->storage_class;
+		fr = operand_stack_top->storage_class;
 		operand_pop();
 		spill_reg(REG_EDX);
 		gen_opcodeOne(0x99);
@@ -472,13 +493,13 @@ void gen_opInteger(int op)
 		gen_modrm(ADDR_REG, opc, fr, NULL, 0);
 		if (op == TK_MOD)
 		{
-			r = REG_EDX;
+			storage_class = REG_EDX;
 		}
 		else
 		{
-			r = REG_EAX;
+			storage_class = REG_EAX;
 		}
-		operand_stack_top->r = r;
+		operand_stack_top->storage_class = storage_class;
 		break;
 	default:
 		opc = 7;
@@ -494,36 +515,36 @@ void gen_opInteger(int op)
 /************************************************************************/
 void gen_opTwoInteger(int opc, int op)
 {
-	int r, fr, c;
-	if ((operand_stack_top->r & (SC_VALMASK | SC_LOCAL | SC_SYM)) == SC_GLOBAL)
+	int storage_class, fr, c;
+	if ((operand_stack_top->storage_class & (SC_VALMASK | SC_LOCAL | SC_SYM)) == SC_GLOBAL)
 	{
-		r = load_one(REG_ANY, operand_stack_second);
+		storage_class = load_one(REG_ANY, operand_stack_second);
 		c = operand_stack_top->value;
 		if (c == (char)c)
 		{
 			gen_opcodeOne(0x83);
-			gen_modrm(ADDR_REG, opc, r, NULL, 0);
+			gen_modrm(ADDR_REG, opc, storage_class, NULL, 0);
 			gen_byte(c);
 		}
 		else
 		{
 			gen_opcodeOne(0x81);
-			gen_modrm(ADDR_REG, opc, r, NULL, 0);
+			gen_modrm(ADDR_REG, opc, storage_class, NULL, 0);
 			gen_byte(c);
 		}
 	}
 	else
 	{
 		load_two(REG_ANY, REG_ANY);
-		r  = operand_stack_second->r;
-		fr = operand_stack_top->r;
+		storage_class  = operand_stack_second->storage_class;
+		fr = operand_stack_top->storage_class;
 		gen_opcodeOne((opc << 3) | 0x01);
-		gen_modrm(ADDR_REG, fr, r, NULL, 0);
+		gen_modrm(ADDR_REG, fr, storage_class, NULL, 0);
 	}
 	operand_pop();
 	if (op >= TK_EQ && op <= TK_GEQ)   // >,<,>=.<=...
 	{
-		operand_stack_top->r = SC_CMP;
+		operand_stack_top->storage_class = SC_CMP;
 		switch(op) {
 		case TK_EQ:
 			operand_stack_top->value = 0x84;
@@ -589,6 +610,9 @@ void backpatch(int t, int a)
 /************************************************************************/
 int gen_jmpforward(int t)
 {
+	// JMP--Jump		
+	// E9 cd	JMP rel32	
+	// Jump near,relative,displacement relative to next instruction
 	gen_opcodeOne(0xe9);
 	return makelist(t);
 }
@@ -603,11 +627,15 @@ void gen_jmpbackward(int a)
 	r = a - ind - 1;
 	if (r = (char)r)
 	{
+		// EB cb	JMP rel8	
+		// Jump short,relative,displacement relative to next instruction
 		gen_opcodeOne(0xeb);
 		gen_byte(r);
 	}
 	else
 	{
+		// E9 cd	JMP rel32	
+		// Jump short,relative,displacement relative to next instruction
 		gen_opcodeOne(0xe9);
 		gen_dword(a - ind - 4);
 	}
@@ -622,24 +650,36 @@ int gen_jcc(int t)
 {
 	int v;
 	int inv = 1;
-	v = operand_stack_top->r & SC_VALMASK;
+	v = operand_stack_top->storage_class & SC_VALMASK;
+	// 如果前一句是CMP。这里要生成JLE或者JGE。
 	if (v == SC_CMP)
 	{
+		// Jcc--Jump if Condition Is Met
+		// .....
+		// 0F 8F cw/cd		JG rel16/32	jump near if greater(ZF=0 and SF=OF)
+		// .....
 		gen_opcodeTwo(0x0f, operand_stack_top->value ^ inv);
 		t = makelist(t);
 	}
 	else
 	{
-		if (operand_stack_top->r & (SC_VALMASK | SC_LVAL | SC_SYM) == SC_LOCAL)
+		if (operand_stack_top->storage_class & 
+			(SC_VALMASK | SC_LVAL | SC_SYM) == SC_LOCAL)
 		{
 			t = gen_jmpforward(t);
 		}
 		else
 		{
 			v = load_one(REG_ANY, operand_stack_top);
+			// TEST--Logical Compare
+			// 85 /r	TEST r/m32,r32	AND r32 with r/m32,set SF,ZF,PF according to result		
 			gen_opcodeOne(0x85);
 			gen_modrm(ADDR_REG, v, v, NULL, 0);
 
+			//  Jcc--Jump if Condition Is Met
+			// .....
+			// 0F 8F cw/cd		JG rel16/32	jump near if greater(ZF=0 and SF=OF)
+			// .....
 			gen_opcodeTwo(0x0f, 0x85 ^ inv);
 			t = makelist(t);
 		}
@@ -691,7 +731,7 @@ void gen_prolog(Type *func_type)
 		sym_push(sym->token_code & ~SC_PARAMS, type,
 			SC_LOCAL | SC_LVAL, param_addr);
 	}
-	func_ret_sub = 0;
+	func_ret_sub = 0; // KW_CDECL
 	if(func_call == KW_STDCALL)
 		func_ret_sub = addr - 8;
 }
@@ -700,14 +740,68 @@ void gen_prolog(Type *func_type)
  * 功能:	生成函数结尾代码
  * 这个函数的逻辑是这样的。就是对于函数开头代码和结尾代码。
  * 他是首先生成结尾代码。之后通过func_begin_ind获取到函数头，再填充函数开头代码。
+ * 函数开头包括三条指令。其中XXX为栈空间大小。一个整数就是4，两个就是8。
+ * 1. PUSH EBP 
+ * 2. MOVE BP， ESP 
+ * 3. SUB  ESP， XXX
+ * 函数结尾包括三条指令。其中XXXX为调用方式。
+ * 默认不需要填写，如果指定了__stdcall关键字，就填4。
+ * 4. MOV  ESP， EBP 
+ * 5. POP  EBP 
+ * 6. RETN XXXX
  **********************************************************/
 void gen_epilog()
 {
 	int v, saved_ind, opc;
+	// 8B /r	mov r32,r/m32	mov r/m32 to r32
 	gen_opcodeOne((char)0x8B);
+	/* 4. MOV ESP, EBP*/
 	gen_modrm(ADDR_REG, REG_ESP, REG_EBP, NULL, 0);
 
+	// POP--Pop a Value from the Stack
+	// 58+	rd		POP r32		
+	//    POP top of stack into r32; increment stack pointer
+	/* 5. POP EBP */
 	gen_opcodeOne(0x58 + REG_EBP);
+	if (func_ret_sub == 0)
+	{
+		// 6. RET--Return from Procedure
+		// C3	RET	near return to calling procedure
+		gen_opcodeOne(0xC3);
+	}
+	else
+	{
+		// 6. RET--Return from Procedure
+		//    C2 iw	RET imm16	near return to calling procedure 
+		//                      and pop imm16 bytes form stack
+		gen_opcodeOne(0xC2);
+		gen_byte(func_ret_sub);
+		gen_byte(func_ret_sub >> 8);
+	}
+	v = calc_align(-loc, 4);
+	// 把ind设置为之前记录函数体开始的位置。
+	saved_ind = ind;
+	ind = func_begin_ind;
+
+	// 1. PUSH--Push Word or Doubleword Onto the Stack
+	//    50+rd	PUSH r32	Push r32
+	gen_opcodeOne(0x50 + REG_EBP);
+
+	// 89 /r	MOV r/m32,r32	Move r32 to r/m32
+	// 2. MOV EBP, ESP
+	gen_opcodeOne(0x89);
+	gen_modrm(ADDR_REG, REG_ESP, REG_EBP, NULL, 0);
+
+	//SUB--Subtract		81 /5 id	SUB r/m32,imm32	
+	//         Subtract sign-extended imm32 from r/m32
+	// 3. SUB ESP, stacksize
+	gen_opcodeOne(0x81);
+	opc = 5;
+	gen_modrm(ADDR_REG, opc, REG_ESP, NULL, 0);
+	gen_dword(v);
+
+	// 恢复ind的值。
+	ind = saved_ind;
 }
 
 /***********************************************************
@@ -767,7 +861,7 @@ void gen_invoke(int nb_args)
 void gen_call()
 {
 	int r;
-	if (operand_stack_top->r & (SC_VALMASK | SC_LVAL) == SC_GLOBAL)
+	if (operand_stack_top->storage_class & (SC_VALMASK | SC_LVAL) == SC_GLOBAL)
 	{
 		coffreloc_add(sec_text, operand_stack_top->sym, ind + 1, IMAGE_REL_I386_REL32);
 		gen_opcodeOne(0xe8);
@@ -788,35 +882,35 @@ void gen_call()
 /************************************************************************/
 int allocate_reg(int rc)
 {
-	int r;
+	int storage_class;
 	std::vector<Operand>::iterator p;
 	int used;
 
-	for (r = 0; r < REG_EBX; r++)
+	for (storage_class = 0; storage_class < REG_EBX; storage_class++)
 	{
-		if (rc & REG_ANY || r == rc) 
+		if (rc & REG_ANY || storage_class == rc) 
 		{
 			used = 0;
 			for (p = operand_stack.begin(); p != operand_stack_top; p++)
 			{
-				if ((p->r & SC_VALMASK) == r)
+				if ((p->storage_class & SC_VALMASK) == storage_class)
 				{
 					used = 1;
 				}
 			}
 			if (used == 0)
 			{
-				return r;
+				return storage_class;
 			}
 		}
 	}
 	for (p = operand_stack.begin(); p != operand_stack_top; p++)
 	{
-		r = p->r & SC_VALMASK;
-		if (r < SC_GLOBAL && (rc & REG_ANY || r == rc))
+		storage_class = p->storage_class & SC_VALMASK;
+		if (storage_class < SC_GLOBAL && (rc & REG_ANY || storage_class == rc))
 		{
-			spill_reg(r);
-			return r;
+			spill_reg(storage_class);
+			return storage_class;
 		}
 	}
 	return -1;
@@ -827,7 +921,7 @@ int allocate_reg(int rc)
 /*       并且标记释放'r'寄存器的操作数为局部变量                        */
 /* r：寄存器编码                                                        */
 /************************************************************************/
-void spill_reg(char r)
+void spill_reg(char storage_class)
 {
 	int size, align;
 	std::vector<Operand>::iterator p;
@@ -836,25 +930,25 @@ void spill_reg(char r)
 
 	for (p = operand_stack.begin(); p != operand_stack_top; p++)
 	{
-		if ((p->r & SC_VALMASK) == r)
+		if ((p->storage_class & SC_VALMASK) == storage_class)
 		{
-			r = p->r & SC_VALMASK;
+			storage_class = p->storage_class & SC_VALMASK;
 			type = &p->type;
-			if (p->r & SC_LVAL)
+			if (p->storage_class & SC_LVAL)
 			{
 				type = &int_type;
 			}
 			size = type_size(type, &align);
 			loc = calc_align(loc - size, align);
 			operand_assign(&opd, type->type, SC_LOCAL | SC_LVAL, loc);
-			store(r, &opd);
-			if (p->r & SC_LVAL)
+			store(storage_class, &opd);
+			if (p->storage_class & SC_LVAL)
 			{
-				p->r = (p->r & ~(SC_VALMASK)) | SC_LLOCAL;
+				p->storage_class = (p->storage_class & ~(SC_VALMASK)) | SC_LLOCAL;
 			}
 			else
 			{
-				p->r = SC_LOCAL | SC_LVAL;
+				p->storage_class = SC_LOCAL | SC_LVAL;
 			}
 			p->value = loc;
 			break;
@@ -871,7 +965,7 @@ void spill_regs()
 	std::vector<Operand>::iterator p;
 	for (p = operand_stack.begin(); p != operand_stack_top; p++)
 	{
-		r = p->r & SC_VALMASK;
+		r = p->storage_class & SC_VALMASK;
 		if (r < SC_GLOBAL)
 		{
 			spill_reg(r);

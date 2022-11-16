@@ -24,11 +24,11 @@ void direct_declarator_postfix(Type * type, int func_call);
 void parameter_type_list(Type * type, int func_call); // (int func_call);
 
 void compound_statement(int * bsym, int * csym);
-void if_statement();
-void break_statement();
+void if_statement(int *bsym, int *csym);
+void break_statement(int *bsym);
 void return_statement();
-void continue_statement();
-void for_statement();
+void continue_statement(int *csym);
+void for_statement(int *bsym, int *csym);
 void expression_statement();
 
 void expression();
@@ -316,27 +316,27 @@ void initializer(Type * type)
  *             | <for_statement>         
  *             | <expression_statement>  
  **********************************************************/
-void statement()
+void statement(int *bsym, int *csym)
 {
 	switch(get_current_token_type())
 	{
 	case TK_BEGIN:
-		compound_statement(NULL, NULL);			// 复合语句
+		compound_statement(bsym, csym);			// 复合语句
 		break;
 	case KW_IF:
-		if_statement();
+		if_statement(bsym, csym);
 		break;
 	case KW_RETURN:
 		return_statement();
 		break;
 	case KW_BREAK:
-		break_statement();
+		break_statement(bsym);
 		break;
 	case KW_CONTINUE:
-		continue_statement();
+		continue_statement(csym);
 		break;
 	case KW_FOR:
-		for_statement();
+		for_statement(bsym, csym);
 		break;
 	default:
 		expression_statement();
@@ -380,7 +380,7 @@ void compound_statement(int * bsym, int * csym)
 
 	while(get_current_token_type() != TK_END)
 	{
-		statement();
+		statement(bsym, csym);
 	}
 	syntax_state = SNTX_LF_HT;
 	sym_pop(&local_sym_stack, s);
@@ -406,7 +406,7 @@ void expression_statement()
  * <if_statement> ::= <KW_IF><TK_OPENPA><expression>
  *          <TK_CLOSEPA><statement>[<KW_ELSE><statement>]
  **********************************************************/
-void if_statement()
+void if_statement(int *bsym, int *csym)
 {
 	syntax_state = SNTX_SP;
 
@@ -416,13 +416,13 @@ void if_statement()
 
 	syntax_state = SNTX_LF_HT;
 	skip_token(TK_CLOSEPA);
-	statement();
+	statement(bsym, csym);
 
 	if(get_current_token_type() == KW_ELSE)
 	{
 		syntax_state = SNTX_LF_HT;
 		get_token();
-		statement();
+		statement(bsym, csym);
 	}
 }	
 
@@ -430,7 +430,7 @@ void if_statement()
  *  <for_statement> ::= <KW_FOR><TK_OPENPA><expression_statement>
  *        <expression_statement><expression><TK_CLOSEPA><statement>
  **********************************************************/
-void for_statement()
+void for_statement(int *bsym, int *csym)
 {
 	get_token();
 	skip_token(TK_OPENPA);
@@ -466,13 +466,13 @@ void for_statement()
 		skip_token(TK_CLOSEPA);
 	}
 	// Deal with the body of for_statement 
-	statement(); 
+	statement(bsym, csym); 
 }
 
 /***********************************************************
  *  <while_statement> ::= <KW_WHILE><TK_OPENPA><expression><TK_CLOSEPA><statement>
  **********************************************************/
-void while_statement()
+void while_statement(int *bsym, int *csym)
 {
 	get_token();
 	skip_token(TK_OPENPA);
@@ -481,13 +481,13 @@ void while_statement()
 	skip_token(TK_CLOSEPA);
 	syntax_state = SNTX_LF_HT;
 	// Deal with the body of while_statement 
-	statement(); 
+	statement(bsym, csym); 
 }
 
 /***********************************************************
  *  <continue_statement> ::= <KW_CONTINUE><TK_SEMICOLON>
  **********************************************************/
-void continue_statement()
+void continue_statement(int *csym)
 {
 	get_token();
 	syntax_state = SNTX_LF_HT;
@@ -497,7 +497,7 @@ void continue_statement()
 /***********************************************************
  *  <break_statement> ::= <KW_CONTINUE><TK_SEMICOLON>
  **********************************************************/
-void break_statement()
+void break_statement(int *bsym)
 {
 	get_token();
 	syntax_state = SNTX_LF_HT;
@@ -830,15 +830,15 @@ void argument_expression_list()
 }
 
 /************************************************************************
- *	<struct_declaration> ::= 
+ *	<struct_member_declaration> ::= 
  *	<type_specifier><struct_declarator_list><TK_SEMICOLON>*
  *	<struct_declarator_list> ::= <declarator>{<TK_COMMA><declarator>}
  *	等价转换后文法：：
- *	<struct_declaration> ::= 
+ *	<struct_member_declaration> ::= 
  *	<type_specifier><declarator>{<TK_COMMA><declarator>}
  *	<TK_SEMICOLON>
  ***********************************************************************/
-void struct_declaration(int * maxalign, int * offset, Symbol *** ps)
+void struct_member_declaration(int * maxalign, int * offset, Symbol *** ps)
 {
 	int v, size, align;
 	Symbol * ss;
@@ -863,8 +863,8 @@ void struct_declaration(int * maxalign, int * offset, Symbol *** ps)
 			*maxalign = align;
 		}
 		ss = sym_push(v | SC_MEMBER, &typeOne, 0, *offset);
-		* offset = size;
-		** ps = ss;
+		*offset += size;
+		**ps = ss;
 		*ps = &ss->next;
 		// end of Adding Symbol operation
 
@@ -884,8 +884,8 @@ int calc_align(int n , int align)
 }
 
 /************************************************************************/
-/*  <struct_declaration_list> ::= <struct_declaration>                  */
-/*                               {<struct_declaration>}                 */
+/*  <struct_declaration_list> ::= <struct_member_declaration>           */
+/*                               {<struct_member_declaration>}          */
 /************************************************************************/
 void struct_declaration_list(Type * type)
 {
@@ -906,7 +906,7 @@ void struct_declaration_list(Type * type)
 	// end of Adding Symbol operation
 	while (get_current_token_type() != TK_END)  // } 右大括号
 	{
-		struct_declaration(&maxalign, &offset, &ps);
+		struct_member_declaration(&maxalign, &offset, &ps);
 	}
 	skip_token(TK_END);
 	// syntax_state = SNTX_LF_HT;

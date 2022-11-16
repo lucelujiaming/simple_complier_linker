@@ -50,11 +50,11 @@ void direct_declarator_postfix(Type * type, int func_call);
 void parameter_type_list(Type * type, int func_call); // (int func_call);
 
 void compound_statement(int * bsym, int * csym);
-void if_statement();
-void break_statement();
+void if_statement(int *bsym, int *csym);
+void break_statement(int *bsym);
 void return_statement();
-void continue_statement();
-void for_statement();
+void continue_statement(int *csym);
+void for_statement(int *bsym, int *csym);
 void expression_statement();
 
 void expression();
@@ -406,7 +406,7 @@ void init_variable(Type * type, Section * sec, int c, int v)
 	{
 		if(operand_stack_top)
 		{
-			if ((operand_stack_top->r &(SC_VALMASK | SC_LVAL)) != SC_GLOBAL)
+			if ((operand_stack_top->storage_class &(SC_VALMASK | SC_LVAL)) != SC_GLOBAL)
 			{
 				print_error("Use constant to initialize the global variable");
 			}
@@ -424,7 +424,7 @@ void init_variable(Type * type, Section * sec, int c, int v)
 		default:
 			if(operand_stack_top)
 			{
-				if(operand_stack_top->r & SC_SYM)
+				if(operand_stack_top->storage_class & SC_SYM)
 				{
 					coffreloc_add(sec, operand_stack_top->sym,c, IMAGE_REL_I386_DIR32);
 				}
@@ -445,7 +445,7 @@ void init_variable(Type * type, Section * sec, int c, int v)
 			gen_opcodeOne(0xB8 + REG_ECX);
 			gen_dword(operand_stack_top->type.ref->related_value);
 			gen_opcodeOne(0xB8 + REG_ESI);
-			gen_addr32(operand_stack_top->r, operand_stack_top->sym, operand_stack_top->value);
+			gen_addr32(operand_stack_top->storage_class, operand_stack_top->sym, operand_stack_top->value);
 			operand_swap();
 			
 			gen_opcodeOne(0x8D);
@@ -479,27 +479,27 @@ void init_variable(Type * type, Section * sec, int c, int v)
  *             | <for_statement>         
  *             | <expression_statement>  
  **********************************************************/
-void statement()
+void statement(int *bsym, int *csym)
 {
 	switch(get_current_token_type())
 	{
 	case TK_BEGIN:
-		compound_statement(NULL, NULL);			// 复合语句
+		compound_statement(bsym, csym);			// 复合语句
 		break;
 	case KW_IF:
-		if_statement();
+		if_statement(bsym, csym);
 		break;
 	case KW_RETURN:
 		return_statement();
 		break;
 	case KW_BREAK:
-		break_statement();
+		break_statement(bsym);
 		break;
 	case KW_CONTINUE:
-		continue_statement();
+		continue_statement(csym);
 		break;
 	case KW_FOR:
-		for_statement();
+		for_statement(bsym, csym);
 		break;
 	default:
 		expression_statement();
@@ -551,7 +551,7 @@ void compound_statement(int * bsym, int * csym)
 		char temp_str[128];
 		sprintf(temp_str, "Execute %s statement", get_current_token());
 		print_all_stack(temp_str);
-		statement();
+		statement(bsym, csym);
 	}
 	syntax_state = SNTX_LF_HT;
 	printf("\t local_sym_stack.size = %d \n", local_sym_stack.size());
@@ -568,18 +568,34 @@ void expression_statement()
 	if(get_current_token_type() != TK_SEMICOLON)
 	{
 		expression();
+		// 计算完一个表达式，退一次栈。
+		operand_pop();
 	}
 	syntax_state = SNTX_LF_HT;
 	skip_token(TK_SEMICOLON);
 
 }
 
-/***********************************************************
- * <if_statement> ::= <KW_IF><TK_OPENPA><expression>
- *          <TK_CLOSEPA><statement>[<KW_ELSE><statement>]
- **********************************************************/
-void if_statement()
+/************************************************************************/
+/* <if_statement> ::= <KW_IF><TK_OPENPA><expression>                    */
+/*          <TK_CLOSEPA><statement>[<KW_ELSE><statement>]               */
+/************************************************************************/
+/* 一条形如 if(a > b) 语句包括四条指令。                                */
+/*   MOV EAX, DWORD PT RSS: [EBP一8]                                    */
+/*   MOV ECX, DWORD PT RSS: [EBP-4]                                     */
+/*   CMP ECX, EAX                                                       */
+/*   JLE scc_anal.0040123F                                              */
+/* 可以看出来，对应关系还是非常明显的。首先是把变量放在EAX和ECX，       */
+/* 之后调用CMP进行比较。根据比较结果，如果a不大于b，就跳转到else分支。  */
+/* 反之，如果a大于b，说明条件符合，直接运行后面的语句即可，无需跳转。   */
+/*                                                                      */
+/* 一条 else 语句包括一条指令。                                         */
+/*   JMP scc_anal. 00401245                                             */
+/* 执行到else语句说明，IF后面的语句执行完了，直接跳过ELSE部分即可。     */
+/************************************************************************/
+void if_statement(int *bsym, int *csym)
 {
+	int if_jmp, else_jmp;
 	syntax_state = SNTX_SP;
 
 	get_token();
@@ -588,22 +604,83 @@ void if_statement()
 
 	syntax_state = SNTX_LF_HT;
 	skip_token(TK_CLOSEPA);
-	statement();
+	// 为IF语句生成条件跳转指令。
+	if_jmp = gen_jcc(0);
+	statement(bsym, csym);
 
 	if(get_current_token_type() == KW_ELSE)
 	{
 		syntax_state = SNTX_LF_HT;
 		get_token();
-		statement();
+		// 为ELSE语句生成跳转指令。
+		else_jmp = gen_jmpforward(0);
+		// 为IF语句填人相对地址。
+		backpatch(if_jmp, ind);
+		statement(bsym, csym);
+		// 为ELSE语句填人相对地址。
+		backpatch(else_jmp, ind);
+	}
+	else
+	{
+		// 为IF语句填人相对地址。
+		backpatch(if_jmp, ind);
 	}
 }	
 
-/***********************************************************
- *  <for_statement> ::= <KW_FOR><TK_OPENPA><expression_statement>
- *        <expression_statement><expression><TK_CLOSEPA><statement>
- **********************************************************/
-void for_statement()
+/************************************************************************/
+/*  <for_statement> ::= <KW_FOR><TK_OPENPA><expression_statement>       */
+/*        <expression_statement><expression><TK_CLOSEPA><statement>     */
+/************************************************************************/
+/* 一条形如 for(i = 0; i < 10; i++) 语句包括如下的指令。                */
+/* 首先是赋初值的i = 0对应的指令如下:                                   */
+/*  1. MOV EAX, 0                                                       */
+/*  2. MOV DWORD PT RSS: [EBP-4], EAX                                   */
+/* 就是一个简单的赋值操作。                                             */
+/*  1. 把0放入EAX。                                                     */
+/*  2. 之后放入变量中。                                                 */
+/*                                                                      */
+/* 然后是i < 10对应的指令如下:                                          */
+/*  3. MOV EAX, DWORD PT RSS：[EBP-4]                                   */
+/*  4. CMP EAX, 0A                                                      */
+/*  5. JGE scc_anal.0040128D                                            */
+/*  6. JMP scc_anal. 00401276                                           */
+/* 操作步骤如下：                                                       */
+/*  3 & 4. 把变量和10进行比较。                                         */
+/*  5. 如果比10大，就跳转到整个for语句体的结尾。                        */
+/*  6. 否则，就跳转到整个for语句体里面。                                */
+/*                                                                      */
+/* 然后是i++对应的指令如下:                                             */
+/*  7. MOV EAX, DWORD PT RSS：[EBP-4]                                   */
+/*  8. ADD EAX, 1                                                       */
+/*  9. MOV DWORD PT RSS: [EBP一4], EAX                                  */
+/* 10. JMP SHORT scc_anal.0040125A                                      */
+/* 操作步骤如下：                                                       */
+/* 7 & 8 & 9. 把变量加一。                                              */
+/* 10. 然后跳转到i < 10的地方。                                         */
+/*                                                                      */
+/* 下面是arr[i] = i对应的指令:                                          */
+/* 11. MOV  EAX, 4                                                      */
+/* 12. MOV  ECX, DWORD PT RSS: [EBP-4]                                  */
+/* 13. IMUL ECX, EAX                                                    */
+/* 14. LEA  EAX, DWORD PT RSS: [EBP-2C]                                 */
+/* 15. ADD  EAX, ECX                                                    */
+/* 16. MOV  ECX, DWORD PT RSS: [EBP-4]                                  */
+/* 17. MOV  DWORD PTR DS: [EAX], ECX                                    */
+/* 18. JMP  SHORT scc_anal.0040126B                                     */
+/* 可以看到逻辑也非常简单。                                             */
+/* 11. 首先EAX设置为4，                                                 */
+/* 12. 之后取出i的值放入ECX。                                           */
+/* 13. 之后把ECX和EAX相乘，放入ECX。                                    */
+/* 14. 之后取出数组首地址放入EAX。                                      */
+/* 15. 之后加上ECX，得到了r[i]的地址。结果放入EAX。                     */
+/* 16. 取出i的值放入ECX。                                               */
+/* 17. 完成arr[i] = i的赋值操作。                                       */
+/* 18. 完成循环体，跳转到i++指令的位置。                                */
+/************************************************************************/
+void for_statement(int *bsym, int *csym)
 {
+	// int b;
+	int for_end_address, for_inc_address,for_exit_cond_address,for_body_address;
 	get_token();
 	skip_token(TK_OPENPA);
 
@@ -611,15 +688,27 @@ void for_statement()
 	if(get_current_token_type() != TK_SEMICOLON)   // Such as for(n = 0; n < 100; n++)
 	{
 		expression();
+		operand_pop();
 		skip_token(TK_SEMICOLON);
 	}
-	else 						// Such as for(; n < 100; n++)
+	else 											// Such as for(; n < 100; n++)
+	{
 		skip_token(TK_SEMICOLON);
-
+	}
+	// 现在我们位于for语句的第一个分号位置。首先记录下循环头的退出条件的位置。
+	for_exit_cond_address = ind;
+	// 初始化循环头的累加条件的位置。因为循环累加条件有可能不存在。
+	for_inc_address = ind;
+	// 初始化循环体结束位置。
+	for_end_address = 0;
+	// b = 0;
 	// Chapter II
 	if(get_current_token_type() != TK_SEMICOLON)   // Such as for(n = 0; n < 100; n++)
 	{
 		expression();
+		// 生成循环头的退出的跳转语句。例如：5. JGE scc_anal.0040128D
+		// 跳转地址在处理完for语句以后回填。
+		for_end_address = gen_jcc(0);
 		skip_token(TK_SEMICOLON);
 	}
 	else 						// Such as for(n = 0; ; n++)
@@ -628,39 +717,71 @@ void for_statement()
 	// Chapter III
 	if(get_current_token_type() != TK_CLOSEPA)   // Such as for(n = 0; n < 100; n++)
 	{
+		// 生成循环头的不退出的跳转语句。例如：6. JMP scc_anal. 00401276
+		for_body_address = gen_jmpforward(0);
+		// 代码执行到这里我们来到了循环头的累加部分。记录下这个位置。
+		for_inc_address = ind;
+		// 处理循环头的累加部分。
 		expression();
+		operand_pop();
+		// 累加处理完了以后，跳转到循环头的退出判断的地方。
+		// 例如：10. JMP SHORT scc_anal.0040125A
+		gen_jmpbackward(for_exit_cond_address);
+		// 执行到了这里，我们来到了循环循环体。我们可以填充循环体的起始地址了。
+		backpatch(for_body_address, ind);
 		syntax_state = SNTX_LF_HT;
 		skip_token(TK_CLOSEPA);
 	}
 	else 						// Such as for(n = 0; n < 100;)
 	{
+		// 如果没有累加部分，则什么都不用做。
 		syntax_state = SNTX_LF_HT;
 		skip_token(TK_CLOSEPA);
 	}
 	// Deal with the body of for_statement 
-	statement(); 
+	statement(bsym, csym); 
+	// 循环体处理完了以后，跳转到循环头累加的地方。
+	// 例如：18. JMP  SHORT scc_anal.0040126B
+	gen_jmpbackward(for_inc_address);
+	// 执行到了这里，我们可以填充循环体的结束地址了。
+	backpatch(for_end_address, ind);
+	// 这句话好像是多余的。因为b一直是零。而且如果传入0，backpatch什么都不会做。
+	// backpatch(b, for_inc_address);
 }
 
 /***********************************************************
  *  <while_statement> ::= <KW_WHILE><TK_OPENPA><expression><TK_CLOSEPA><statement>
  **********************************************************/
-void while_statement()
+void while_statement(int *bsym, int *csym)
 {
 	get_token();
 	skip_token(TK_OPENPA);
 	// Chapter I
 	expression();
 	skip_token(TK_CLOSEPA);
+	
+	// 为WHILE语句生成条件跳转指令。
+	// if_jmp = gen_jcc(0);
+
 	syntax_state = SNTX_LF_HT;
 	// Deal with the body of while_statement 
-	statement(); 
+	statement(bsym, csym); 
+	
+	// 循环体处理完了以后，跳转到循环头。
+	// 例如：18. JMP  SHORT scc_anal.0040126B
+	// gen_jmpbackward(for_inc_address);
 }
 
 /***********************************************************
  *  <continue_statement> ::= <KW_CONTINUE><TK_SEMICOLON>
  **********************************************************/
-void continue_statement()
+void continue_statement(int *csym)
 {
+	if (!csym)
+	{
+		print_error("Can not use continue");
+	}
+	* csym = gen_jmpforward(*csym);
 	get_token();
 	syntax_state = SNTX_LF_HT;
 	skip_token(TK_SEMICOLON);
@@ -669,8 +790,14 @@ void continue_statement()
 /***********************************************************
  *  <break_statement> ::= <KW_CONTINUE><TK_SEMICOLON>
  **********************************************************/
-void break_statement()
+void break_statement(int *bsym)
 {
+	if (!csym)
+	{
+		print_error("Can not use break");
+	}
+	* bsym = gen_jmpforward(*bsym);
+
 	get_token();
 	syntax_state = SNTX_LF_HT;
 	skip_token(TK_SEMICOLON);
@@ -696,6 +823,8 @@ void return_statement()
 	if(get_current_token_type() != TK_SEMICOLON)   // 
 	{
 		expression();
+		load_one(REG_IRET, operand_stack_top);
+		operand_pop();
 	}
 	syntax_state = SNTX_LF_HT;
 	skip_token(TK_SEMICOLON);
@@ -1004,7 +1133,7 @@ void primary_expression()
 		operand_push(&s->typeSymbol, r, s->related_value);
         /* 符号引用，操作数必须记录符号地址 */	
 		if(operand_stack_top)
-        if (operand_stack_top->r & SC_SYM) 
+        if (operand_stack_top->storage_class & SC_SYM) 
 		{   
 			operand_stack_top->sym = s;      
             operand_stack_top->value = 0;  //用于函数调用，及全局变量引用 printf("g_cc=%c\n",g_cc);

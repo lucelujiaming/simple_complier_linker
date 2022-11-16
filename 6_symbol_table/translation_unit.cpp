@@ -23,11 +23,11 @@ void direct_declarator_postfix(Type * type, int func_call);
 void parameter_type_list(Type * type, int func_call); // (int func_call);
 
 void compound_statement(int * bsym, int * csym);
-void if_statement();
-void break_statement();
+void if_statement(int *bsym, int *csym);
+void break_statement(int *bsym);
 void return_statement();
-void continue_statement();
-void for_statement();
+void continue_statement(int *csym);
+void for_statement(int *bsym, int *csym);
 void expression_statement();
 
 void expression();
@@ -354,27 +354,27 @@ void initializer(Type * type)
  *             | <for_statement>         
  *             | <expression_statement>  
  **********************************************************/
-void statement()
+void statement(int *bsym, int *csym)
 {
 	switch(get_current_token_type())
 	{
 	case TK_BEGIN:
-		compound_statement(NULL, NULL);			// 复合语句
+		compound_statement(bsym, csym);			// 复合语句
 		break;
 	case KW_IF:
-		if_statement();
+		if_statement(bsym, csym);
 		break;
 	case KW_RETURN:
 		return_statement();
 		break;
 	case KW_BREAK:
-		break_statement();
+		break_statement(bsym);
 		break;
 	case KW_CONTINUE:
-		continue_statement();
+		continue_statement(csym);
 		break;
 	case KW_FOR:
-		for_statement();
+		for_statement(bsym, csym);
 		break;
 	default:
 		expression_statement();
@@ -426,7 +426,7 @@ void compound_statement(int * bsym, int * csym)
 		char temp_str[128];
 		sprintf(temp_str, "Execute %s statement", get_current_token());
 		print_all_stack(temp_str);
-		statement();
+		statement(bsym, csym);
 	}
 	syntax_state = SNTX_LF_HT;
 	printf("\t local_sym_stack.size = %d \n", local_sym_stack.size());
@@ -453,7 +453,7 @@ void expression_statement()
  * <if_statement> ::= <KW_IF><TK_OPENPA><expression>
  *          <TK_CLOSEPA><statement>[<KW_ELSE><statement>]
  **********************************************************/
-void if_statement()
+void if_statement(int *bsym, int *csym)
 {
 	syntax_state = SNTX_SP;
 
@@ -463,13 +463,13 @@ void if_statement()
 
 	syntax_state = SNTX_LF_HT;
 	skip_token(TK_CLOSEPA);
-	statement();
+	statement(bsym, csym);
 
 	if(get_current_token_type() == KW_ELSE)
 	{
 		syntax_state = SNTX_LF_HT;
 		get_token();
-		statement();
+		statement(bsym, csym);
 	}
 }	
 
@@ -477,7 +477,7 @@ void if_statement()
  *  <for_statement> ::= <KW_FOR><TK_OPENPA><expression_statement>
  *        <expression_statement><expression><TK_CLOSEPA><statement>
  **********************************************************/
-void for_statement()
+void for_statement(int *bsym, int *csym)
 {
 	get_token();
 	skip_token(TK_OPENPA);
@@ -513,13 +513,13 @@ void for_statement()
 		skip_token(TK_CLOSEPA);
 	}
 	// Deal with the body of for_statement 
-	statement(); 
+	statement(bsym, csym); 
 }
 
 /***********************************************************
  *  <while_statement> ::= <KW_WHILE><TK_OPENPA><expression><TK_CLOSEPA><statement>
  **********************************************************/
-void while_statement()
+void while_statement(int *bsym, int *csym)
 {
 	get_token();
 	skip_token(TK_OPENPA);
@@ -528,13 +528,13 @@ void while_statement()
 	skip_token(TK_CLOSEPA);
 	syntax_state = SNTX_LF_HT;
 	// Deal with the body of while_statement 
-	statement(); 
+	statement(bsym, csym); 
 }
 
 /***********************************************************
  *  <continue_statement> ::= <KW_CONTINUE><TK_SEMICOLON>
  **********************************************************/
-void continue_statement()
+void continue_statement(int *csym)
 {
 	get_token();
 	syntax_state = SNTX_LF_HT;
@@ -544,7 +544,7 @@ void continue_statement()
 /***********************************************************
  *  <break_statement> ::= <KW_CONTINUE><TK_SEMICOLON>
  **********************************************************/
-void break_statement()
+void break_statement(int *bsym)
 {
 	get_token();
 	syntax_state = SNTX_LF_HT;
@@ -1096,7 +1096,7 @@ void external_declaration(e_StorageClass iSaveType)
 	}
 	// 因此上，如果前面type_specifier有处理结构体，这时bTypeCurrent.t就会等于T_STRUCT。
 	// 这说明这一次，我们处理完了一个外部声明。我们就返回。
-	if (bTypeCurrent.type == T_STRUCT && get_current_token_type() == TK_SEMICOLON)
+	if (bTypeCurrent.t == T_STRUCT && get_current_token_type() == TK_SEMICOLON)
 	{
 		print_all_stack("End external_declaration");
 		get_token();
