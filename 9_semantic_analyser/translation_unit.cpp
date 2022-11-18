@@ -20,7 +20,7 @@ extern Section *sec_text,	// 代码节
 		*sec_symtab,		// 符号表节	
 		*sec_dynsymtab;		// 链接库符号节
 
-extern int rsym;						// 记录return指令位置
+extern int return_symbol_pos;			// 记录return指令位置
 extern int ind ;						// 指令在代码节位置
 extern int loc ;						// 局部变量在栈中位置
 extern int func_begin_ind;				// 函数开始指令
@@ -323,7 +323,7 @@ void func_body(Symbol * sym)
 
 	// 3. 生成函数开头代码。
 	gen_prolog(&(sym->typeSymbol));
-	rsym = 0;
+	return_symbol_pos = 0;
 
 	// 4. 调用复合语句处理函数处理函数体中的语句。
 	// print_all_stack("sym_push local_sym_stack");
@@ -331,7 +331,7 @@ void func_body(Symbol * sym)
 	// print_all_stack("Left local_sym_stack");
 
 	// 5. 函数返回后，回填返回地址。
-	backpatch(rsym, ind);
+	backpatch(return_symbol_pos, ind);
 	
 	// 6. 生成函数结尾代码。
 	gen_epilog();
@@ -581,8 +581,8 @@ void expression_statement()
 /*          <TK_CLOSEPA><statement>[<KW_ELSE><statement>]               */
 /************************************************************************/
 /* 一条形如 if(a > b) 语句包括四条指令。                                */
-/*   MOV EAX, DWORD PT RSS: [EBP一8]                                    */
-/*   MOV ECX, DWORD PT RSS: [EBP-4]                                     */
+/*   MOV EAX, DWORD PTR SS: [EBP-8]                                    */
+/*   MOV ECX, DWORD PTR SS: [EBP-4]                                     */
 /*   CMP ECX, EAX                                                       */
 /*   JLE scc_anal.0040123F                                              */
 /* 可以看出来，对应关系还是非常明显的。首先是把变量放在EAX和ECX，       */
@@ -634,13 +634,13 @@ void if_statement(int *bsym, int *csym)
 /* 一条形如 for(i = 0; i < 10; i++) 语句包括如下的指令。                */
 /* 首先是赋初值的i = 0对应的指令如下:                                   */
 /*  1. MOV EAX, 0                                                       */
-/*  2. MOV DWORD PT RSS: [EBP-4], EAX                                   */
+/*  2. MOV DWORD PTR SS: [EBP-4], EAX                                   */
 /* 就是一个简单的赋值操作。                                             */
 /*  1. 把0放入EAX。                                                     */
 /*  2. 之后放入变量中。                                                 */
 /*                                                                      */
 /* 然后是i < 10对应的指令如下:                                          */
-/*  3. MOV EAX, DWORD PT RSS：[EBP-4]                                   */
+/*  3. MOV EAX, DWORD PTR SS：[EBP-4]                                   */
 /*  4. CMP EAX, 0A                                                      */
 /*  5. JGE scc_anal.0040128D                                            */
 /*  6. JMP scc_anal. 00401276                                           */
@@ -650,9 +650,9 @@ void if_statement(int *bsym, int *csym)
 /*  6. 否则，就跳转到整个for语句体里面。                                */
 /*                                                                      */
 /* 然后是i++对应的指令如下:                                             */
-/*  7. MOV EAX, DWORD PT RSS：[EBP-4]                                   */
+/*  7. MOV EAX, DWORD PTR SS：[EBP-4]                                   */
 /*  8. ADD EAX, 1                                                       */
-/*  9. MOV DWORD PT RSS: [EBP一4], EAX                                  */
+/*  9. MOV DWORD PTR SS: [EBP-4], EAX                                  */
 /* 10. JMP SHORT scc_anal.0040125A                                      */
 /* 操作步骤如下：                                                       */
 /* 7 & 8 & 9. 把变量加一。                                              */
@@ -660,11 +660,11 @@ void if_statement(int *bsym, int *csym)
 /*                                                                      */
 /* 下面是arr[i] = i对应的指令:                                          */
 /* 11. MOV  EAX, 4                                                      */
-/* 12. MOV  ECX, DWORD PT RSS: [EBP-4]                                  */
+/* 12. MOV  ECX, DWORD PTR SS: [EBP-4]                                  */
 /* 13. IMUL ECX, EAX                                                    */
-/* 14. LEA  EAX, DWORD PT RSS: [EBP-2C]                                 */
+/* 14. LEA  EAX, DWORD PTR SS: [EBP-2C]                                 */
 /* 15. ADD  EAX, ECX                                                    */
-/* 16. MOV  ECX, DWORD PT RSS: [EBP-4]                                  */
+/* 16. MOV  ECX, DWORD PTR SS: [EBP-4]                                  */
 /* 17. MOV  DWORD PTR DS: [EAX], ECX                                    */
 /* 18. JMP  SHORT scc_anal.0040126B                                     */
 /* 可以看到逻辑也非常简单。                                             */
@@ -772,30 +772,58 @@ void while_statement(int *bsym, int *csym)
 	// gen_jmpbackward(for_inc_address);
 }
 
-/***********************************************************
- *  <continue_statement> ::= <KW_CONTINUE><TK_SEMICOLON>
- **********************************************************/
+/************************************************************************/
+/*  <continue_statement> ::= <KW_CONTINUE><TK_SEMICOLON>                */
+/************************************************************************/
+/* 一条形如 if(i==2) continue; 的语句包括如下的指令。                   */
+/* 首先是 if(i==2) 对应的指令如下:                                      */
+/*  1. MOV EAX, DWORD PTR SS: [EBP-4]                                   */
+/*  2. CMP EAX, 2                                                       */
+/*  3. JNZ scc_anal.004012CF                                            */
+/* 就是一个简单的比较跳转操作。                                         */
+/*  1. 把i的值放入EAX。                                                 */
+/*  2. 之后和2比较。                                                    */
+/*  3. 如果不等于，就跳转到if语句体的结尾处。                           */
+/* 接着 continue; 对应的指令如下:                                       */
+/*  4. JMP scc_anal.004012B3                                            */
+/* 就是直接跳转到外层for语句的累加处。                                  */
+/************************************************************************/
 void continue_statement(int *csym)
 {
 	if (!csym)
 	{
 		print_error("Can not use continue");
 	}
+	// 生成跳转到外层for语句累加处的汇编代码。
 	* csym = gen_jmpforward(*csym);
 	get_token();
 	syntax_state = SNTX_LF_HT;
 	skip_token(TK_SEMICOLON);
 }
 
-/***********************************************************
- *  <break_statement> ::= <KW_CONTINUE><TK_SEMICOLON>
- **********************************************************/
+/************************************************************************/
+/*  <break_statement> ::= <KW_CONTINUE><TK_SEMICOLON>                   */
+/************************************************************************/
+/* 一条形如 if(i==6) break; 的语句包括如下的指令。                      */
+/* 首先是 if(i==6) 对应的指令如下:                                      */
+/*  1. MOV EAX, DWORD PTR SS: [EBP-4]                                   */
+/*  2. CMP EAX, 6                                                       */
+/*  3. JNZ scc_anal.004012E0                                            */
+/* 就是一个简单的比较跳转操作。                                         */
+/*  1. 把i的值放入EAX。                                                 */
+/*  2. 之后和6比较。                                                    */
+/*  3. 如果不等于，就跳转到if语句体的结尾处。                           */
+/* 接着 break; 对应的指令如下:                                          */
+/*  4. JMP scc_anal.0040130D                                            */
+/* 就是直接跳转到外层for语句的循环体结尾处。                            */
+/************************************************************************/
 void break_statement(int *bsym)
 {
-	if (!csym)
+	if (!bsym)
 	{
 		print_error("Can not use break");
 	}
+	// 生成跳转到外层for语句的循环体结尾处的汇编代码。
 	* bsym = gen_jmpforward(*bsym);
 
 	get_token();
@@ -803,10 +831,17 @@ void break_statement(int *bsym)
 	skip_token(TK_SEMICOLON);
 }
 
-/***********************************************************
- *  <return_statement> ::= <KW_RETURN><TK_SEMICOLON>
- *                       | <KW_RETURN><expression><TK_SEMICOLON>
- **********************************************************/
+/************************************************************************/
+/*  <return_statement> ::= <KW_RETURN><TK_SEMICOLON>                    */
+/*                       | <KW_RETURN><expression><TK_SEMICOLON>        */
+/************************************************************************/
+/* 一条形如 return 1; 的语句包括如下的指令。                            */
+/*  1. MOV EAX, 1                                                       */
+/*  2. JMP scc_anal.00401317                                            */
+/* 就是一个简单的赋值跳转操作。                                         */
+/*  1. 把返回值1放入EAX。                                               */
+/*  2. 之后跳转到函数体的末尾。后续操作由gen_epilog完成。               */
+/************************************************************************/
 void return_statement()
 {
 	syntax_state = SNTX_DELAY;
@@ -823,18 +858,22 @@ void return_statement()
 	if(get_current_token_type() != TK_SEMICOLON)   // 
 	{
 		expression();
+		// 将栈顶操作数，也就是返回值，加载到'rc'类寄存器中。
+		// 例如： 1. MOV EAX, 1
 		load_one(REG_IRET, operand_stack_top);
 		operand_pop();
 	}
 	syntax_state = SNTX_LF_HT;
 	skip_token(TK_SEMICOLON);
+	// 生成跳转指令的汇编代码。
+	return_symbol_pos = gen_jmpforward(return_symbol_pos);
 }
 
 
-/***********************************************************
- *  <expression> ::= <assignment_expression>
- *        {<TK_COMMA><assignment_expression>}
- **********************************************************/
+/************************************************************************/
+/*  <expression> ::= <assignment_expression>                            */
+/*        {<TK_COMMA><assignment_expression>}                           */
+/************************************************************************/
 void expression()
 {
 	while (1)
@@ -845,32 +884,82 @@ void expression()
 		{
 			break;
 		}
+		operand_pop();
 		get_token();
 	}
 }
 
-/***********************************************************
- *  <assignment_expression> ::= <equality_expression>
- *           |<unary_expression><TK_ASSIGN><assignment_expression>：
- *  非等价变换后文法：
- *  <assignment_expression> ::= <equality_expression>
- *                  {<TK ASSIGN><assignment expression>} 
- **********************************************************/
+void check_leftvalue()
+{
+	if ((operand_stack_top->storage_class & SC_LVAL))
+	{
+		print_error("Need left value");
+	}
+}
+
+/************************************************************************/
+/*  <assignment_expression> ::= <equality_expression>                   */
+/*           |<unary_expression><TK_ASSIGN><assignment_expression>      */
+/*  这里有左递归，可以提取公因子                                        */
+/*  非等价变换后文法：                                                  */
+/*  <assignment_expression> ::= <equality_expression>                   */
+/*                  {<TK ASSIGN><assignment expression>}                */
+/************************************************************************/
+/* 一条形如 char a='a'; 的语句包括如下的指令。                          */
+/*  1. MOV EAX, 61                                                      */
+/*  2. MOV BYTE PTR SS: [EBP-1], AL                                     */
+/* 一条形如 short b=6; 的语句包括如下的指令。                           */
+/*  1. MOV EAX, 6                                                       */
+/*  2. MOV WORD PTR SS: [EBP-2], AX                                     */
+/* 一条形如 int c=8; 的语句包括如下的指令。                             */
+/*  1. MOV EAX, 8                                                       */
+/*  2. MOV DWORD PTR SS: [EBP-4], EAX                                   */
+/* 一条形如 char str1[] = "abe"; 的语句包括如下的指令。                 */
+/*  1. MOV ECX, 4                                                       */
+/*  2. MOV ESI.scc_anal.00403000; ASCII"abe"                            */
+/*  3. LEA EDI, DWORD PTR SS: [EBP-8]                                   */
+/*  4. REP MOVS BYTE PTR ES: [EDI], BYTE PTR DS: [ESI]                  */
+/*  这里的REP表示重复执行后面的MOV指令。                                */
+/* 这里用到了变址寄存器(Index Register)ESI和EDI，它们主要用于存放存储   */
+/* 单元在段内的偏移量，用它们可实现多种存储器操作数的寻址方式，为以不同 */
+/* 的地址形式访问存储单元提供方便。这里用于字符串操作指令的执行过程。   */
+/************************************************************************/
+/* 一条形如 char* str2 = "XYZ"; 的语句包括如下的指令。                  */
+/*  1. MOV EAX, scc_anal.00403004; ASCII"XYZ"                           */
+/*  2. MOV DWORD PTR SS: [EBP-C], EAX                                   */
+/************************************************************************/
 void assignment_expression()
 {
 	equality_expression();
 	if (get_current_token_type() == TK_ASSIGN)
 	{
+		check_leftvalue();
 		get_token();
 		assignment_expression();
+		store_one();
 	}
 }
 
-/***********************************************************
- *  <equality expression> ::= <relational_expression>
- *                    {<TK_EQ><relational_expression>
- *                    |<TK_NEQ><relational_expression>}
- **********************************************************/
+/************************************************************************/
+/*  <equality expression> ::= <relational_expression>                   */
+/*                    {<TK_EQ><relational_expression>                   */
+/*                    |<TK_NEQ><relational_expression>}                 */
+/************************************************************************/
+/* 一条形如 c = a == b; 的语句包括如下的指令。                          */
+/*  1. MOV EAX, DWORD PTR SS: [EBP-8]                                   */
+/*  2. MOV ECX, DWORD PTR SS: [EBP-4]                                   */
+/*  3. CMP ECX, EAX                                                     */
+/*  4. MOV EAX, 0                                                       */
+/*  5. SETE AL                                                          */
+/*  6. MOV DWORD PTR SS: [EBP-C], EAX                                   */
+/* 一条形如 c = a != b; 的语句包括如下的指令。                          */
+/*  1. MOV EAX, DWORD PTR SS: [EBP-8]                                   */
+/*  2. MOV ECX, DWORD PTR SS: [EBP-4]                                   */
+/*  3. CMP ECX, EAX                                                     */
+/*  4. MOV EAX, 0                                                       */
+/*  5. SETNE AL                                                         */
+/*  6. MOV DWORD PTR SS: [EBP-C], EAX                                   */
+/************************************************************************/
 void equality_expression()
 {
 	relational_expression();
@@ -887,13 +976,43 @@ void equality_expression()
 void additive_expression();
 void multiplicative_expression();
 void unary_expression();
-/***********************************************************
- *  <relational_expression> ::= <additive_expression>{
- *       <TK_LT><additive_expression>    // < 小于号      TK_LT, "<", 
- *     | <TK_GT><additive_expression>    // <= 小于等于号 TK_LEQ, "<=",
- *     | <TK_LEQ><additive_expression>   // > 大于号      TK_GT, ">", 
- *     | <TK_GEQ><additive_expression>}  // >= 大于等于号 TK_GEQ, ">=",
- **********************************************************/
+
+/************************************************************************/
+/*  <relational_expression> ::= <additive_expression>{                  */
+/*       <TK_LT><additive_expression>    // < 小于号      TK_LT, "<",   */
+/*     | <TK_GT><additive_expression>    // <= 小于等于号 TK_LEQ, "<=", */
+/*     | <TK_LEQ><additive_expression>   // > 大于号      TK_GT, ">",   */
+/*     | <TK_GEQ><additive_expression>}  // >= 大于等于号 TK_GEQ, ">=", */
+/************************************************************************/
+/* 一条形如 c = a > b; 的语句包括如下的指令。                           */
+/*  1. MOV EAX, DWORD PTR SS: [EBP-8]                                   */
+/*  2. MOV ECX, DWORD PTR SS: [EBP-4]                                   */
+/*  3. CMP ECX, EAX                                                     */
+/*  4. MOV EAX, 0                                                       */
+/*  5. SET GAL                                                          */
+/*  6. MOV DWORD PTR SS: [EBP-C], EAX                                   */
+/* 一条形如 c = a >= b; 的语句包括如下的指令。                          */
+/*  1. MOV EAX, DWORD PTR SS: [EBP-8]                                   */
+/*  2. MOV ECX, DWORD PTR SS: [EBP-4]                                   */
+/*  3. CMP ECX, EAX                                                     */
+/*  4. MOV EAX, 0                                                       */
+/*  5. SETGE AL                                                         */
+/*  6. MOV DWORD PTR SS: [EBP-C], EAX                                   */
+/* 一条形如 c = a < b; 的语句包括如下的指令。                           */
+/*  1. MOV EAX, DWORD PTR SS: [EBP-8]                                   */
+/*  2. MOV ECX, DWORD PTR SS: [EBP-4]                                   */
+/*  3. CMP ECX, EAX                                                     */
+/*  4. MOV EAX, 0                                                       */
+/*  5. SETL AL                                                          */
+/*  6. MOV DWORD PTR SS: [EBP-C], EAX                                   */
+/* 一条形如 c = a <= b; 的语句包括如下的指令。                          */
+/*  1. MOV EAX, DWORD PTR SS: [EBP-8]                                   */
+/*  2. MOV ECX, DWORD PTR SS: [EBP-4]                                   */
+/*  3. CMP ECX, EAX                                                     */
+/*  4. MOV EAX, 0                                                       */
+/*  5. SETL EAL                                                         */
+/*  6. MOV DWORD PTR SS: [EBP-C], EAX                                   */
+/************************************************************************/
 void relational_expression()
 {
 	additive_expression();
@@ -905,11 +1024,34 @@ void relational_expression()
 	}
 }
  
-/***********************************************************
- * <additive_expression> ::= <multiplicative_expression>
- *                {<TK_PLUS><multiplicative_expression>
- *                 <TK_MINUS><multiplicative_expression>)
- **********************************************************/
+/************************************************************************/
+/* <additive_expression> ::= <multiplicative_expression>                */
+/*                {<TK_PLUS><multiplicative_expression>                 */
+/*                 <TK_MINUS><multiplicative_expression>)               */
+/************************************************************************/
+/* 一条形如 c = a + b; 的语句包括如下的指令。                           */
+/*  1. MOV EAX,  DWORD PTR SS：[EBP-8]                                  */
+/*  2. MOV ECX,  DWORD PTR SS：[EBP-4]                                  */
+/*  3. ADD ECX,  EAX                                                    */
+/*  4. MOV DWORD PTR SS: [EBP-C], ECX                                   */
+/* 一条形如 d = a + 8; 的语句包括如下的指令。                           */
+/*  1. MOV EAX,  DWORD PTR SS: [EBP-4]                                  */
+/*  2. ADD EAX,  8                                                      */
+/*  3. MOV DWORD PTR SS: [EBP-10], EAX                                  */
+/* 一条形如 e = 6 + 8; 的语句包括如下的指令。                           */
+/*  1. MOV EAX,  6                                                      */
+/*  2. ADD EAX,  8                                                      */
+/*  3. MOV DWORD PTR SS: [EBP-14], EAX                                  */
+/* 一条形如 c = a - b; 的语句包括如下的指令。                           */
+/*  1. MOV EAX,  DWORD PTR SS: [EBP-8]                                  */
+/*  2. MOV ECX,  DWORD PTR SS: [EBP-4]                                  */
+/*  3. SUB ECX,  EAX                                                    */
+/*  4. MOV DWORD PTR SS: [EBP-C], ECX                                   */
+/* 一条形如 d = a - 8; 的语句包括如下的指令。                           */
+/*  1. MOV EAX, DWORD PTR SS: [EBP-4]                                   */
+/*  2. SUB EAX, 8                                                       */
+/*  3. MOV DWORD PTR SS: [EBP-10],  EAX                                 */
+/************************************************************************/
 void additive_expression()
 {
 	multiplicative_expression();
@@ -920,12 +1062,64 @@ void additive_expression()
 	}
 }
 
-/***********************************************************
-* <multiplicative_expression> ::= <unary_expression>
-*                   {<TK_STAR><unary_expression>
-*                   |<TK_DIVIDE><unary_expression>
-*                   |<TK_MOD><unary_expression>}
-**********************************************************/
+/************************************************************************/
+/* <multiplicative_expression> ::= <unary_expression>                   */
+/*                   {<TK_STAR><unary_expression>                       */
+/*                   |<TK_DIVIDE><unary_expression>                     */
+/*                   |<TK_MOD><unary_expression>}                       */
+/************************************************************************/
+/* 一条形如 c = a * b; 的语句包括如下的指令。                           */
+/*  1. MOV  EAX,  DWORD PTR SS: [EBP-8]                                 */
+/*  2. MOV  ECX,  DWORD PTR SS: [EBP-4]                                 */
+/*  3. IMUL ECX,  EAX                                                   */
+/*  4. MOV  DWORD PTR SS: [EBP-C], ECX                                  */
+/* 一条形如 d = a * 8; 的语句包括如下的指令。                           */
+/*  1. MOV  EAX,  8                                                     */
+/*  2. MOV  ECX,  DWORD PTR SS: [EBP-4]                                 */
+/*  3. IMUL ECX,  EAX                                                   */
+/*  4. MOV  DWORD PTR SS: [EBP-10], ECX                                 */
+/* 一条形如 e = 6 * 8; 的语句包括如下的指令。                           */
+/*  1. MOV  EAX,  8                                                     */
+/*  2. MOV  ECX,  6                                                     */
+/*  3. IMUL ECX,  EAX                                                   */
+/*  4. MOV DWORD PTR SS: [EBP-14], ECX                                  */
+/* 一条形如 c = a / b; 的语句包括如下的指令。                           */
+/*  1. MOV ECX,  DWORD PTR SS: [EBP-8]                                  */
+/*  2. MOV EAX,  DWORD PTR SS: [EBP-4]                                  */
+/*  3. CDQ                                                              */
+/*  4. IDIV ECX                                                         */
+/*  5. MOV DWORD PTR SS: [EBP-C], EAX                                   */
+/* 一条形如 d = a / 8; 的语句包括如下的指令。                           */
+/*  1. MOV ECX,  8                                                      */
+/*  2. MOV EAX,  DWORD PTR SS: [EBP-4]                                  */
+/*  3. CDQ                                                              */
+/*  4. IDIV ECX                                                         */
+/*  5. MOV DWORD PTR SS: [EBP-10], EAX                                  */
+/* 一条形如 e = 6 / 8; 的语句包括如下的指令。                           */
+/*  1. MOV ECX,  8                                                      */
+/*  2. MOV EAX,  6                                                      */
+/*  3. CDQ                                                              */
+/*  4. IDIV ECX                                                         */
+/*  5. MOV DWORD PTR SS: [EBP-14], EAX                                  */
+/* 一条形如 c = a % b; 的语句包括如下的指令。                           */
+/*  1. MOV ECX,  DWORD PTR SS: [EBP-8]                                  */
+/*  2. MOV EAX,  DWORD PTR SS: [EBP-4]                                  */
+/*  3. CDQ                                                              */
+/*  4. IDIV ECX                                                         */
+/*  5. MOV DWORD PTR SS: [EBP-C], EDX                                   */
+/* 一条形如 d = a % 8; 的语句包括如下的指令。                           */
+/*  1. MOV ECX,  8                                                      */
+/*  2. MOV EAX,  DWORD PTR SS: [EBP-4]                                  */
+/*  3. CDQ                                                              */
+/*  4. IDIV ECX                                                         */
+/*  5. MOV DWORD PTR SS: [EBP-10], EDX                                  */
+/* 一条形如 e = 6 % 8; 的语句包括如下的指令。                           */
+/*  1. MOV ECX,  8                                                      */
+/*  2. MOV EAX,  6                                                      */
+/*  3. CDQ                                                              */
+/*  4. IDIV ECX                                                         */
+/*  5. MOV DWORD PTR SS: [EBP-14], EDX                                  */
+/************************************************************************/
 void multiplicative_expression()
 {
 	unary_expression();
@@ -940,14 +1134,34 @@ void primary_expression();
 void postfix_expression();
 void sizeof_expression();
 void argument_expression_list();
-/***********************************************************
-* <unary_expression> ::= <postfix_expression>
-*                 | <TK_AND><unary_expression>
-*                 | <TK_STAR><unary_expression>
-*                 | <TK_PLUS><unary_expression>
-*                 | <TK_MINUS><unary_expression>
-*                 | <sizeof_expression>
-**********************************************************/
+/************************************************************************/
+/* <unary_expression> ::= <postfix_expression>                          */
+/*                 | <TK_AND><unary_expression>                         */
+/*                 | <TK_STAR><unary_expression>                        */
+/*                 | <TK_PLUS><unary_expression>                        */
+/*                 | <TK_MINUS><unary_expression>                       */
+/*                 | <sizeof_expression>                                */
+/************************************************************************/
+/* 变量定义如下：                                                       */
+/*     int a, *pa, n;                                                   */
+/* 一条形如 a = +8; 的语句包括如下的指令。                              */
+/*  1. MOV EAX,  8                                                      */
+/*  2. MOV DWORD PTR SS: [EBP-4], EAX                                   */
+/* 一条形如 a = -8; 的语句包括如下的指令。                              */
+/*  1. MOV EAX,  0                                                      */
+/*  2. SUB EAX,  8                                                      */
+/*  3. MOV DWORD PTR SS: [EBP-4], EAX                                   */
+/* 一条形如 a = *pa; 的语句包括如下的指令。                             */
+/*  1. MOV EAX,  DWORD PTR SS: [EBP-8]                                  */
+/*  2. MOV ECX,  DWORD PTR DS: [EAX]                                    */
+/*  3. MOV DWORD PTR SS: [EBP-4], ECX                                   */
+/* 一条形如 pa = &a; 的语句包括如下的指令。                             */
+/*  1. LEA EAX,  DWORD PTR SS: [EBP-4]                                  */
+/*  2. MOV DWORD PTR SS: [EBP-8], EAX                                   */
+/* 一条形如 n = sizeof(int); 的语句包括如下的指令。                     */
+/*  1. MOV EAX,  4                                                      */
+/*  2. MOV DWORD PTR SS: [EBP-C], EAX                                   */
+/************************************************************************/
 void unary_expression()
 {
 	switch(get_current_token_type())
@@ -1031,14 +1245,41 @@ int type_size(Type * typeCal, int * align)
 	}
 }
 
-/***********************************************************
- *  <postfix_expression> ::= <primary_expression>
- *    { <TK_OPENBR><expression><TK_CLOSEBR>
- *    | <TK_OPENPA><TK_CLOSEPA>
- *    | <TK_OPENPA><argument_expression_list><TK_CLOSEPA>
- *    | <TK_DOT><IDENTIFIER>
- *    | <TK POINTS TO><IDENTIFIER>}
- **********************************************************/
+/************************************************************************/
+/*  <postfix_expression> ::= <primary_expression>                       */
+/*    { <TK_OPENBR><expression><TK_CLOSEBR>                             */
+/*    | <TK_OPENPA><TK_CLOSEPA>                                         */
+/*    | <TK_OPENPA><argument_expression_list><TK_CLOSEPA>               */
+/*    | <TK_DOT><IDENTIFIER>                                            */
+/*    | <TK POINTS TO><IDENTIFIER>}                                     */
+/************************************************************************/
+/* 变量定义如下：                                                       */
+/*     struct point                                                     */
+/*     {                                                                */
+/*         int m_x;                                                     */
+/*         int m_y;                                                     */
+/*     };                                                               */
+/*                                                                      */
+/*     int x；                                                          */
+/*     struct point pt;                                                 */
+/*     int arr[10];                                                     */
+/* 一条形如 x = arr[1]; 的语句包括如下的指令。                          */
+/*  1. MOV EAX,  1                                                      */
+/*  2. MOV ECX,  0                                                      */
+/*  3. IMUL ECX,  EAX                                                   */
+/*  4. LEA EAX,  DWORD PTR SS: [EBP-C]                                  */
+/*  5. ADD EAX,  ECX                                                    */
+/*  6. MOV ECX,  DWORD PTR DS: [EAX]                                    */
+/*  7. MOV DWORD PTR SS: [EBP-4], ECX                                   */
+/* 一条形如 x = pt.m_x; 的语句包括如下的指令。                          */
+/*  1. MOV EAX,  4                                                      */
+/*  2. MOV ECX,  1                                                      */
+/*  3. IMUL ECX,  EAX                                                   */
+/*  4. LEA EAX,  DWORD PTR SS: [EBP-34]                                 */
+/*  5. ADD EAX.ECX                                                      */
+/*  6. MOV ECX,  DWORD PTR DS: [EAX]                                    */
+/*  7. MOV DWORD PTR SS: [EBP-4], ECX                                   */
+/************************************************************************/
 void postfix_expression()
 {
 	primary_expression();
@@ -1066,13 +1307,67 @@ void postfix_expression()
 	}
 }
 
-/***********************************************************
- *  <primary_expression> ::= <IDENTIFIER>
- *     | <TK_CINT>
- *     | <TK_CCHAR>
- *     | <TK_CSTR>
- *     | <TK_OPENPA><expression><TK_CLOSEPA>
- **********************************************************/
+/************************************************************************/
+/*  <primary_expression> ::= <IDENTIFIER>                               */
+/*     | <TK_CINT>                                                      */
+/*     | <TK_CCHAR>                                                     */
+/*     | <TK_CSTR>                                                      */
+/*     | <TK_OPENPA><expression><TK_CLOSEPA>                            */
+/************************************************************************/
+/* 全局变量定义如下：                                                   */
+/*    char g_char = 'a';                                                */
+/*    short g_short = 123;                                              */
+/*    int g_int = 123456;                                               */
+/*    char g_str1[] = "g_strl";                                         */
+/*    char* g_str2 = "g_str2";                                          */                                       
+/* 一条形如 char a = 'a'; 的语句包括如下的指令。                        */
+/*    MOV EAX,  61                                                      */
+/*    MOV BYTE PTR SS: [EBP-1], AL                                      */
+/* 一条形如 short b = 8; 的语句包括如下的指令。                         */
+/*    MOV EAX,  8                                                       */
+/*    MOV WORD PTR SS: [EBP-2], AX                                      */
+/* 一条形如 int c = 6; 的语句包括如下的指令。                           */
+/*    MOV EAX,  6                                                       */
+/*    MOV DWORD PTR SS: [EBP-4], EAX                                    */
+/* 一条形如 char str1[]  = "str 1"; 的语句包括如下的指令。              */
+/*    MOV ECX,  5                                                       */
+/*    MOV ESI,  scc_anal.00403015; ASCII"strl"                          */
+/*    LEA EDI,  DWORD PTR SS: [EBP-9]                                   */
+/*    REP MOVS  BYTE PTR ES: [EDI], BYTE PTR DS: [ESI]                  */
+/* 一条形如 char* str2 = "str2"; 的语句包括如下的指令。                 */
+/*    MOV EAX,  scc_anal.0040301A; ASCII"str2"                          */
+/*    MOV DWORD PTR SS: [EBP-C], EAX                                    */
+/* 一条形如 a = g_char; 的语句包括如下的指令。                          */
+/*    ; MOVSX - 带符号扩展传送指令                                      */
+/*    MOVSX EAX,  BYTE PTR DS: [402000]                                 */
+/*    MOV BYTE PTR SS: [EBP-1], AL                                      */
+/* 一条形如 b = g_short; 的语句包括如下的指令。                         */
+/*    MOVSX EAX,  WORD PTR DS: [402002]                                 */
+/*    MOV WORD PTR SS: [EBP-2], AX                                      */
+/* 一条形如 c = g_int; 的语句包括如下的指令。                           */
+/*    MOV  EAX,  DWORD PTR DS: [402004]                                 */
+/*    MOV  DWORD PTR SS: [EBP-4], EAX                                   */
+/* 一条形如 printf(g_str1); 的语句包括如下的指令。                      */
+/*    MOV  EAX,  scc_anal.00402008; ASCII“g_strl"                       */
+/*    PUSH EAX                                                          */
+/*    CALL <JMP.&ms vert.printf>                                        */
+/*    ADD  ESP, 4                                                       */
+/* 一条形如 printf(printf(g_str2);); 的语句包括如下的指令。             */
+/*    MOV  EAX, DWORD PTR: [402010]: scc_anal.0040300E                  */
+/*    PUSH EAX                                                          */
+/*    CALL <JMP.&-ms vert.printf>                                       */
+/*    ADD  ESP,  4                                                      */
+/* 一条形如 printf(str1); 的语句包括如下的指令。                        */
+/*    LEA  EAX, DWORD PTR SS: [EBP-9]                                   */
+/*    PUSH EAX                                                          */
+/*    CALL <JMP.&ms vert.printf>                                        */
+/*    ADD ESP. 4                                                        */
+/* 一条形如 printf(str2); 的语句包括如下的指令。                        */
+/*    MOV  EAX,  DWORD PTR SS: [EBP-C]                                  */
+/*    PUSH EAX                                                          */
+/*    CALL <JMP.&ms vert.printf>                                        */
+/*    ADD ESP,  4                                                       */
+/************************************************************************/
 void primary_expression()
 {
 	// 这里的addr暂时没有用到。这个是用法是首先调用allocate_storage函数，从这个函数中获得。
@@ -1142,10 +1437,43 @@ void primary_expression()
 	}
 }
 
-/***********************************************************
- *  <argument_expression_list> ::= <assignment_expression>
- *                      {<TK_COMMA><assignment_expression>}
- **********************************************************/
+/************************************************************************/
+/* 功能：解析实参表达式表                                               */
+/* <argument_expression_list> ::= <assignment_expression>               */
+/*                     {<TK_COMMA><assignment_expression>}              */
+/************************************************************************/
+/* 函数定义如下：                                                       */
+/*    int add(int x, int y)                                             */
+/*    {                                                                 */
+/*        return x+y;                                                   */
+/*    }                                                                 */
+/* 函数包括如下的指令。                                                 */
+/*    1. PUSH EBP                                                       */
+/*    2. MOVE BP.ESP                                                    */
+/*    3. SUB ESP. 0                                                     */
+/*    4. MOV EAX,  DWORD PTR SS: [EBP+C]                                */
+/*    5. MOV ECX,  DWORD PTR SS: [EBP+8]                                */
+/*    6. ADD ECX,  EAX                                                  */
+/*    7. JMP scc_anal.00401331                                          */
+/*    8. MOV ESP, EBP                                                   */
+/*    9. POP EBP                                                        */
+/*   10. RETN                                                           */
+/* 其中1-3行为函数入口。4-6行执行x+y。7行执行return。8-10行为函数出口。 */
+/* 一条形如 c = add(a, b); 的语句包括如下的指令。                       */
+/*    MOV  EAX,  DWORD PTR SS: [EBP-8]  ; 把a取出来压栈。               */
+/*    PUSH EAX                                                          */
+/*    MOV  EAX,  DWORD PTR SS: [EBP-4]  ; 把b取出来压栈。               */
+/*    PUSH EAX                                                          */
+/*    CALL scc_anal.0040131B            ; 调用函数。                    */
+/*    ADD  ESP, 8                       ; 恢复堆栈。                    */
+/*                                      ; 因为有两个参数，这里写8。     */
+/*    MOV DWORD PTR SS: [EBP-C], EAX    ; 把返回值取出来放到c里面。     */
+/* 一条形如 printf("Hello"); 的语句包括如下的指令。                     */
+/*    MOV  EAX, scc_anal.00403008; ASCII"Hello"                         */
+/*    PUSH EAX                                                          */
+/*    CALL<JMP.&msvcrt.printf>                                          */
+/*    ADD ESP,  4                                                       */
+/************************************************************************/
 void argument_expression_list()
 {
 	get_token();

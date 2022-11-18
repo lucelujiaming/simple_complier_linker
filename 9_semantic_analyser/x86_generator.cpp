@@ -12,7 +12,7 @@
 #define FUNC_PROLOG_SIZE      9
 
 /* 本章用到的全局变量 */
-int rsym;						// 记录return指令位置
+int return_symbol_pos;			// 记录return指令位置
 int ind = 0;					// 指令在代码节位置
 int loc = 0;					// 局部变量在栈中位置。
 								// 因为栈顶是零，这个值基本上一直是一个负数。
