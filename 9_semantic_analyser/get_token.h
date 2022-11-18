@@ -15,6 +15,7 @@ struct TkWord* tkword_insert(char * strNewToken); // , e_TokenCode tokenCode);
 
 char * get_current_token();
 int get_current_token_type();
+void set_current_token_type(int iTokenType);
 void skip_token(int c);
 
 void syntax_indent();

@@ -47,5 +47,5 @@ void gen_epilog();
 int gen_jcc(int t);
 int gen_jmpforward(int t);
 void gen_jmpbackward(int a);
-
+Type *pointed_type(Type *t);
 #endif

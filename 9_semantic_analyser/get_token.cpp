@@ -602,3 +602,8 @@ int get_current_token_type()
 {
 	return token_type;
 }
+
+void set_current_token_type(int iTokenType)
+{
+	token_type = iTokenType;
+}
