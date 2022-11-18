@@ -245,23 +245,28 @@ void gen_addr32(int r, Symbol * sym, int c)
 void load(int storage_class, Operand * opd)
 {
 	int v, ft, fc, fr;
-	ft = opd->storage_class;
-	fc = opd->type.type;
-	fr = opd->value;
+	fr = opd->storage_class;
+	ft = opd->type.type;
+	fc = opd->value;
 
 	v = fr & SC_VALMASK;
 	if (fr & SC_LVAL)    // 左值
 	{
 		if ((ft & T_BTYPE) == T_CHAR)
 		{
+			// movsx -- move with sign-extention	
+			// 0F BE /r	movsx r32,r/m8	move byte to doubleword,sign-extention
 			gen_opcodeTwo(0x0f, 0xbe); // 0F BE -> movsx r32, r/m8
 		}
 		else if ((ft & T_BTYPE) == T_SHORT)
 		{
+			// movsx -- move with sign-extention	
+			// 0F BF /r	movsx r32,r/m16	move word to doubleword,sign-extention
 			gen_opcodeTwo(0x0f, 0xbf); // 0F BF -> movsx r32, r/m16
 		}
 		else 
 		{
+			// 8B /r	mov r32,r/m32	mov r/m32 to r32
 			gen_opcodeOne(0x8b); // 8B -> mov r32, r/m32
 		}
 		gen_modrm(ADDR_OTHER, storage_class, fr, opd->sym, fc);
@@ -270,23 +275,38 @@ void load(int storage_class, Operand * opd)
 	{
 		if (v == SC_GLOBAL)
 		{
+			// B8+ rd	mov r32,imm32		mov imm32 to r32
 			gen_opcodeOne(0xb8 + storage_class);
 			gen_addr32(fr, opd->sym, fc);
 		}
 		else if (v == SC_LOCAL)
 		{
+			// LEA--Load Effective Address
+			// 8D /r	LEA r32,m	Store effective address for m in register r32
 			gen_opcodeOne(0x8d);
 			gen_modrm(ADDR_OTHER, storage_class, SC_LOCAL, opd->sym, fc);
 		}
-		else if (v == SC_CMP)
+		else if (v == SC_CMP) // 适用于c=a>b情况
 		{
-			gen_opcodeOne(0xb8 + storage_class);
+		/*适用情况生成的样例代码
+		  00401384   39C8             CMP EAX,ECX
+		  00401386   B8 00000000      MOV EAX,0
+		  0040138B   0F9FC0           SETG AL
+		  0040138E   8945 FC          MOV DWORD PTR SS:[EBP-4],EAX*/
+
+			/*B8+ rd	mov r32,imm32		mov imm32 to r32*/
+			gen_opcodeOne(0xb8 + storage_class); /* mov r, 0*/
 			gen_dword(0);
-			gen_opcodeTwo(0x0f, fc = 16);
+			
+			// SETcc--Set Byte on Condition
+			// OF 9F			SETG r/m8	Set byte if greater(ZF=0 and SF=OF)
+			// 0F 8F cw/cd		JG rel16/32	jump near if greater(ZF=0 and SF=OF)
+			gen_opcodeTwo(0x0f, fc + 16);
 			gen_modrm(ADDR_REG, 0, storage_class, NULL, 0);
 		}
 		else if (v != storage_class)
 		{
+			// 89 /r	MOV r/m32,r32	Move r32 to r/m32
 			gen_opcodeOne(0x89);
 			gen_modrm(ADDR_REG, v, storage_class, NULL, 0);
 		}
@@ -306,15 +326,17 @@ void store(int r, Operand * opd)
 
 	if (bt == T_SHORT)
 	{
-		gen_prefix(0x66);
+		gen_prefix(0x66); //Operand-size override, 66H
 	}
 
 	if (bt == T_CHAR)
 	{
+		// 88 /r	MOV r/m,r8	Move r8 to r/m8
 		gen_opcodeOne(0x88);
 	}
 	else
 	{
+		// 89 /r	MOV r/m32,r32	Move r32 to r/m32
 		gen_opcodeOne(0x89);
 	}
 
@@ -334,6 +356,9 @@ int load_one(int rc, Operand * opd)
 {
 	int storage_class ;
 	storage_class = opd->storage_class & SC_VALMASK;
+	// 需要加载到寄存器中情况：
+	// 1.栈顶操作数目前尝未分配寄存器
+	// 2.栈顶操作数已分配寄存器，但为左值 *p
 	if (storage_class > SC_GLOBAL || (opd->storage_class & SC_LVAL))
 	{
 	//	storage_class = allocate_reg(rc);
@@ -351,17 +376,46 @@ int load_one(int rc, Operand * opd)
 /******************************************************************************/
 void load_two(int rc1, int rc2)
 {
+	// 8B 45 DC 
 	load_one(rc2, operand_stack_top);
+	// 8B 4D DC
 	load_one(rc2, operand_stack_second);
 }
 
 /************************************************************************/
 /* 功能：将栈顶操作数存人次栈顶操作数中                                 */
 /************************************************************************/
+/* 一条形如 char a='a'; 的语句包括如下的指令。                          */
+/*  1. MOV EAX, 61                                                      */
+/*  2. MOV BYTE PTR SS: [EBP-1], AL                                     */
+/* 一条形如 short b=6; 的语句包括如下的指令。                           */
+/*  1. MOV EAX, 6                                                       */
+/*  2. MOV WORD PTR SS: [EBP-2], AX                                     */
+/* 一条形如 int c=8; 的语句包括如下的指令。                             */
+/*  1. MOV EAX, 8                                                       */
+/*  2. MOV DWORD PTR SS: [EBP-4], EAX                                   */
+/* 一条形如 char str1[] = "abe"; 的语句包括如下的指令。                 */
+/*  1. MOV ECX, 4                                                       */
+/*  2. MOV ESI.scc_anal.00403000; ASCII"abe"                            */
+/*  3. LEA EDI, DWORD PTR SS: [EBP-8]                                   */
+/*  4. REP MOVS BYTE PTR ES: [EDI], BYTE PTR DS: [ESI]                  */
+/*  这里的REP表示重复执行后面的MOV指令。                                */
+/* 这里用到了变址寄存器(Index Register)ESI和EDI，它们主要用于存放存储   */
+/* 单元在段内的偏移量，用它们可实现多种存储器操作数的寻址方式，为以不同 */
+/* 的地址形式访问存储单元提供方便。这里用于字符串操作指令的执行过程。   */
+/************************************************************************/
+/* 一条形如 char* str2 = "XYZ"; 的语句包括如下的指令。                  */
+/*  1. MOV EAX, scc_anal.00403004; ASCII"XYZ"                           */
+/*  2. MOV DWORD PTR SS: [EBP-C], EAX                                   */
+/************************************************************************/
 void store_one()
 {
+	// 根据上面的注释可以看出来，这个赋值操作包含两个部分：
+	// 一个是取出右值。一个是放入左值所在的内存空间。
 	int storage_class = 0,t = 0;
+	// 取出位于栈顶的右值，生成机器码。同时返回保存的寄存器。
 	storage_class = load_one(REG_ANY, operand_stack_top);
+	// 如果次栈顶操作数为寄存器溢出存放栈中。
 	if ((operand_stack_second->storage_class & SC_VALMASK) == SC_LLOCAL)
 	{
 		Operand opd;
@@ -371,8 +425,11 @@ void store_one()
 		load(t, &opd);
 		operand_stack_second->storage_class = t | SC_LVAL;
 	}
+	// 生成将寄存器'r'中的值存入操作数'opd'的机器码。
 	store(storage_class, operand_stack_second);
+	// 就交换栈顶操作数和次栈顶操作数。
 	operand_swap();
+	// 弹出上面交换过来的次栈顶操作数。和上面的操作结合等于删除次栈顶操作数。
 	operand_pop();
 }
 
@@ -407,19 +464,29 @@ void gen_op(int op)
 	btOne = operand_stack_second->type.type & T_BTYPE;
 	btTwo = operand_stack_top->type.type & T_BTYPE;
 
+	// 如果比较的两个元素有一个是指针。
 	if (btOne == T_PTR || btTwo == T_PTR)
 	{
+		// 如果是比较大小。
 		if (op >= TK_EQ && op <= TK_GEQ)   // >,<,>=.<=...
 		{
 			gen_opInteger(op);
 			operand_stack_top->type.type = T_INT;
 		}
+		// 两个操作数都为指针。说明是求两个指针的地址差。例如：
+		//   char * ptr_one, * ptr_two;
+		//   char * test_one = "11111111111111111111111111111111" ;
+		//   char * test_two = "22222222" ;
+		//   ptr_one = test_one;
+		//   ptr_two = test_one + strlen(test_two);
+		//   int iDiff = ptr_two - ptr_one ;
 		else if (btOne == T_PTR && btTwo == T_PTR)
 		{
 			if (op != TK_MINUS)
 			{
 				printf("Only support - and >,<,>=.<= \n");
 			}
+			// 取出被操作数的大小。例如char * ptr_one的大小就是1。
 			u = pointed_size(&operand_stack_second->type);
 			gen_opInteger(op);
 			operand_stack_top->type.type = T_INT;
@@ -427,11 +494,12 @@ void gen_op(int op)
 				pointed_size(&operand_stack_second->type));
 			gen_op(TK_DIVIDE);
 		}
+		// 两个操作数一个是指针，另一个不是指针，并且非关系运算
 		else 
 		{
 			if (op != TK_MINUS && op != TK_PLUS)
 			{
-				printf("Only support - and >,<,>=.<= \n");
+				printf("Only support +- and >,<,>=.<= \n");
 			}
 			if (btTwo == T_PTR)
 			{
@@ -445,9 +513,12 @@ void gen_op(int op)
 			operand_stack_top->type = typeOne;
 		}
 	}
+	// 如果都不是指针，那就是数学运算。
 	else
 	{
+		// 生成数学运算对应的机器汇编码。
 		gen_opInteger(op);
+		// 运算结果是整数。
 		if (op >= TK_EQ && op <= TK_GEQ)   // >,<,>=.<=...
 		{
 			operand_stack_top->type.type = T_INT;
@@ -522,12 +593,19 @@ void gen_opTwoInteger(int opc, int op)
 		c = operand_stack_top->value;
 		if (c == (char)c)
 		{
+			// ADC--Add with Carry			83 /2 ib	ADC r/m32,imm8	Add with CF sign-extended imm8 to r/m32
+			// ADD--Add						83 /0 ib	ADD r/m32,imm8	Add sign-extended imm8 from r/m32
+			// SUB--Subtract				83 /5 ib	SUB r/m32,imm8	Subtract sign-extended imm8 to r/m32
+			// CMP--Compare Two Operands	83 /7 ib	CMP r/m32,imm8	Compare imm8 with r/m32
 			gen_opcodeOne(0x83);
 			gen_modrm(ADDR_REG, opc, storage_class, NULL, 0);
 			gen_byte(c);
 		}
 		else
 		{
+			// ADD--Add					    81 /0 id	ADD r/m32,imm32	Add sign-extended imm32 to r/m32
+			// SUB--Subtract				81 /5 id	SUB r/m32,imm32	Subtract sign-extended imm32 from r/m32
+			// CMP--Compare Two Operands	81 /7 id	CMP r/m32,imm32	Compare imm32 with r/m32
 			gen_opcodeOne(0x81);
 			gen_modrm(ADDR_REG, opc, storage_class, NULL, 0);
 			gen_byte(c);
@@ -835,11 +913,13 @@ void gen_invoke(int nb_args)
 {
 	int size, r, args_size, i, func_call;
 	args_size = 0;
+	// 参数依次入栈
 	for (i = 0; i < nb_args; i++)
 	{
 		r = load_one(REG_ANY, operand_stack_top);
 		size =4;
-		
+		// PUSH--Push Word or Doubleword Onto the Stack
+		// 50+rd	PUSH r32	Push r32
 		gen_opcodeOne(0x50 + r);
 		args_size += size;
 		operand_pop();
@@ -886,6 +966,7 @@ int allocate_reg(int rc)
 	std::vector<Operand>::iterator p;
 	int used;
 
+    /* 查找空闲的寄存器 */
 	for (storage_class = 0; storage_class < REG_EBX; storage_class++)
 	{
 		if (rc & REG_ANY || storage_class == rc) 
@@ -904,6 +985,8 @@ int allocate_reg(int rc)
 			}
 		}
 	}
+
+    // 如果没有空闲的寄存器，从操作数栈底开始查找到第一个占用的寄存器举出到栈中
 	for (p = operand_stack.begin(); p != operand_stack_top; p++)
 	{
 		storage_class = p->storage_class & SC_VALMASK;
@@ -913,6 +996,7 @@ int allocate_reg(int rc)
 			return storage_class;
 		}
 	}
+    /* 此处永远不可能到达 */
 	return -1;
 }
 
@@ -944,6 +1028,7 @@ void spill_reg(char storage_class)
 			store(storage_class, &opd);
 			if (p->storage_class & SC_LVAL)
 			{
+			    // 标识操作数放在栈中
 				p->storage_class = (p->storage_class & ~(SC_VALMASK)) | SC_LLOCAL;
 			}
 			else

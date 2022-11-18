@@ -905,29 +905,6 @@ void check_leftvalue()
 /*  <assignment_expression> ::= <equality_expression>                   */
 /*                  {<TK ASSIGN><assignment expression>}                */
 /************************************************************************/
-/* 一条形如 char a='a'; 的语句包括如下的指令。                          */
-/*  1. MOV EAX, 61                                                      */
-/*  2. MOV BYTE PTR SS: [EBP-1], AL                                     */
-/* 一条形如 short b=6; 的语句包括如下的指令。                           */
-/*  1. MOV EAX, 6                                                       */
-/*  2. MOV WORD PTR SS: [EBP-2], AX                                     */
-/* 一条形如 int c=8; 的语句包括如下的指令。                             */
-/*  1. MOV EAX, 8                                                       */
-/*  2. MOV DWORD PTR SS: [EBP-4], EAX                                   */
-/* 一条形如 char str1[] = "abe"; 的语句包括如下的指令。                 */
-/*  1. MOV ECX, 4                                                       */
-/*  2. MOV ESI.scc_anal.00403000; ASCII"abe"                            */
-/*  3. LEA EDI, DWORD PTR SS: [EBP-8]                                   */
-/*  4. REP MOVS BYTE PTR ES: [EDI], BYTE PTR DS: [ESI]                  */
-/*  这里的REP表示重复执行后面的MOV指令。                                */
-/* 这里用到了变址寄存器(Index Register)ESI和EDI，它们主要用于存放存储   */
-/* 单元在段内的偏移量，用它们可实现多种存储器操作数的寻址方式，为以不同 */
-/* 的地址形式访问存储单元提供方便。这里用于字符串操作指令的执行过程。   */
-/************************************************************************/
-/* 一条形如 char* str2 = "XYZ"; 的语句包括如下的指令。                  */
-/*  1. MOV EAX, scc_anal.00403004; ASCII"XYZ"                           */
-/*  2. MOV DWORD PTR SS: [EBP-C], EAX                                   */
-/************************************************************************/
 void assignment_expression()
 {
 	equality_expression();
@@ -962,14 +939,18 @@ void assignment_expression()
 /************************************************************************/
 void equality_expression()
 {
+	int token_type;
 	relational_expression();
 //	if (get_current_token_type() == TK_EQ 
 //		|| get_current_token_type() == TK_NEQ)
 	while (get_current_token_type() == TK_EQ 
 		|| get_current_token_type() == TK_NEQ)
 	{
+		// 获得运算符
+		token_type = get_current_token_type();
 		get_token();
 		relational_expression();
+		gen_op(token_type);
 	}
 }
 
@@ -1015,12 +996,16 @@ void unary_expression();
 /************************************************************************/
 void relational_expression()
 {
+	int token_type;
 	additive_expression();
 	while(get_current_token_type() == TK_LT || get_current_token_type() == TK_LEQ 
 		|| get_current_token_type() == TK_GT || get_current_token_type() == TK_GEQ)
 	{
+		// 获得运算符
+		token_type = get_current_token_type();
 		get_token();
 		additive_expression();
+		gen_op(token_type);
 	}
 }
  
@@ -1054,11 +1039,15 @@ void relational_expression()
 /************************************************************************/
 void additive_expression()
 {
+	int token_type;
 	multiplicative_expression();
 	while(get_current_token_type() == TK_PLUS || get_current_token_type() == TK_MINUS)
 	{
+		// 获得运算符
+		token_type = get_current_token_type();
 		get_token();
 		multiplicative_expression();
+		gen_op(token_type);
 	}
 }
 
@@ -1122,11 +1111,15 @@ void additive_expression()
 /************************************************************************/
 void multiplicative_expression()
 {
+	int token_type;
 	unary_expression();
 	while(get_current_token_type() == TK_STAR || get_current_token_type() == TK_DIVIDE || get_current_token_type() == TK_MOD)
 	{
+		// 获得运算符
+		token_type = get_current_token_type();
 		get_token();
 		unary_expression();
+		gen_op(token_type);
 	}
 }
 
@@ -1134,6 +1127,42 @@ void primary_expression();
 void postfix_expression();
 void sizeof_expression();
 void argument_expression_list();
+
+void cancel_lvalue()
+{
+	// 判断是否为左值。
+	check_leftvalue();
+	// 清除左值标志。
+	operand_stack_top->storage_class &= ~SC_LVAL;
+}
+
+void indirection()
+{
+	// 简介寻址必须是指针。
+	if ((operand_stack_top->type.type & T_BTYPE) != T_PTR)
+	{
+		// 除非是函数。
+		if ((operand_stack_top->type.type & T_BTYPE) == T_FUNC)
+		{
+			return;
+		}
+		print_error("Need pointer");
+	}
+	if (operand_stack_top->storage_class & SC_LVAL)
+	{
+		load_one(REG_ANY, operand_stack_top);
+	}
+	operand_stack_top->type = *pointed_type(&operand_stack_top->type);
+
+	// 如果不是数组与函数。就设置左值标志。因为数组与函数不能为左值
+	if ((operand_stack_top->type.type & T_BTYPE) != T_FUNC &&
+		!(operand_stack_top->type.type & T_ARRAY))
+	{
+		operand_stack_top->storage_class |= SC_LVAL;
+	}
+
+}
+
 /************************************************************************/
 /* <unary_expression> ::= <postfix_expression>                          */
 /*                 | <TK_AND><unary_expression>                         */
@@ -1167,7 +1196,21 @@ void unary_expression()
 	switch(get_current_token_type())
 	{
 	case TK_AND:
+		get_token();
+		unary_expression();
+		// 如果不是数组与函数
+		if ((operand_stack_top->type.type & T_BTYPE) != T_FUNC &&
+			!(operand_stack_top->type.type & T_ARRAY))
+		{
+			cancel_lvalue();
+		}
+		mk_pointer(&operand_stack_top->type);
+		break;
 	case TK_STAR:
+		get_token();
+		unary_expression();
+		indirection();
+		break;
 	case TK_PLUS:
 	case TK_MINUS:
 		get_token();
@@ -1200,6 +1243,7 @@ void sizeof_expression()
 	size = type_size(&typeCurrent, &align);
 	if(size < 0)
 		print_error("sizeof failed.");
+	operand_push(&int_type, SC_GLOBAL, size);
 }
 
 int type_size(Type * typeCal, int * align)
@@ -1282,20 +1326,57 @@ int type_size(Type * typeCal, int * align)
 /************************************************************************/
 void postfix_expression()
 {
+	Symbol * symbol;
 	primary_expression();
 	while (1)
 	{
 		if (get_current_token_type() == TK_DOT               // | <TK_DOT><IDENTIFIER>
 			|| get_current_token_type() == TK_POINTSTO)      // | <TK_POINTSTO><IDENTIFIER>
 		{
+			if (get_current_token_type() == TK_POINTSTO)
+			{
+				indirection();
+			}
+			cancel_lvalue();
+
 			get_token();
+
+			if ((operand_stack_top->type.type & T_BTYPE) != T_STRUCT)
+			{
+				print_error("Need struct");
+			}
+			symbol = operand_stack_top->type.ref;
+
 			// token |= SC_MEMBER;
+			set_current_token_type(get_current_token_type() | SC_MEMBER);
+			while ((symbol = symbol->next) != NULL)
+			{
+				if (symbol->related_value == get_current_token_type())
+				{
+					break;
+				}
+			}
+			if (!symbol)
+			{
+				print_error("Not found");
+			}
+			operand_stack_top->type = char_pointer_type;
+			operand_push(&int_type, SC_GLOBAL, symbol->related_value);
+			gen_op(TK_PLUS);
+			operand_stack_top->type = symbol->typeSymbol;
+			if (!(operand_stack_top->type.type & T_ARRAY))
+			{
+				operand_stack_top->storage_class |= SC_LVAL;
+			}
+
 			get_token();
 		}
 		else if (get_current_token_type() == TK_OPENBR)      // <TK_OPENBR><expression><TK_CLOSEBR>
 		{
 			get_token();
 			expression();
+			gen_op(TK_PLUS);
+			indirection();
 			skip_token(TK_CLOSEBR);
 		}
 		else if (get_current_token_type() == TK_OPENPA)      // <TK_OPENPA><argument_expression_list><TK_CLOSEPA>
