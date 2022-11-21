@@ -21,7 +21,7 @@ extern Section *sec_text,	// 代码节
 		*sec_dynsymtab;		// 链接库符号节
 
 extern int return_symbol_pos;			// 记录return指令位置
-extern int ind ;						// 指令在代码节位置
+extern int sec_text_opcode_ind ;	 	// 指令在代码节位置
 extern int loc ;						// 局部变量在栈中位置
 extern int func_begin_ind;				// 函数开始指令
 extern int func_ret_sub;				// 函数返回释放栈空间大小
@@ -29,7 +29,7 @@ extern Symbol *sym_sec_rdata;			// 只读节符号
 
 extern std::vector<Operand> operand_stack;
 extern std::vector<Operand>::iterator operand_stack_top;
-extern std::vector<Operand>::iterator operand_stack_second;
+extern std::vector<Operand>::iterator operand_stack_last_top;
 
 extern std::vector<Symbol> global_sym_stack;  //全局符号栈
 extern std::vector<Symbol> local_sym_stack;   //局部符号栈
@@ -38,10 +38,6 @@ extern std::vector<TkWord> tktable;
 extern Type char_pointer_type,		// 字符串指针
 	 int_type,				// int类型
 	 default_func_type;		// 缺省函数类型
-
-extern std::vector<Operand> operand_stack;
-extern std::vector<Operand>::iterator operand_stack_top;
-extern std::vector<Operand>::iterator operand_stack_second;
 
 int type_specifier(Type * type);
 void declarator(Type * type, int * v, int * force_align);
@@ -67,7 +63,7 @@ void external_declaration(e_StorageClass iSaveType);
 int calc_align(int n , int align);
 
 Section * allocate_storage(Type * type, int r, int has_init, int v, int *addr);
-void init_variable(Type * type, Section * sec, int c, int v);
+void init_variable(Type * type, Section * sec, int c); // , int v);
 
 void print_error(char * strErrInfo)
 {
@@ -315,8 +311,9 @@ void parameter_type_list(Type * type, int func_call) // (int func_call)
 void func_body(Symbol * sym)
 {
 	// 1. 增加或更新COFF符号
-	ind = sec_text->data_offset;
-	coffsym_add_update(sym, ind, sec_text->index, CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
+	sec_text_opcode_ind = sec_text->data_offset;
+	coffsym_add_update(sym, sec_text_opcode_ind, 
+		sec_text->index, CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
 	
 	/* 2. 放一个匿名符号到局部符号表中 */
 	sym_direct_push(local_sym_stack, SC_ANOM, &int_type, 0);
@@ -331,11 +328,11 @@ void func_body(Symbol * sym)
 	// print_all_stack("Left local_sym_stack");
 
 	// 5. 函数返回后，回填返回地址。
-	backpatch(return_symbol_pos, ind);
+	backpatch(return_symbol_pos, sec_text_opcode_ind);
 	
 	// 6. 生成函数结尾代码。
 	gen_epilog();
-	sec_text->data_offset = ind;
+	sec_text->data_offset = sec_text_opcode_ind;
 
 	/* 7. 清空局部符号表栈 */
 	if(local_sym_stack.size() > 0)
@@ -373,11 +370,18 @@ void print_all_stack(char* strPrompt)
 }
 
 // 初值符的代码如下所示。
-/***********************************************************
-* <initializer> ::= <assignment_expression>
-*********************************************/
+/************************************************************************/
+/* <initializer> ::= <assignment_expression>                            */
+/************************************************************************/
+/* 功能：变量初始化                                                     */
+/* type：变量类型。也就是左值的类型。                                   */
+/* c：   变量相关值。对于全局变量和字符串常量为节内部偏移量。           */
+/* sec： 变量所在节。对于全局变量和字符串常量为相应节地址。             */
+/*                   对于局部变量为NULL。                               */
+/************************************************************************/
 void initializer(Type * typeToken, int c, Section * sec)
 {
+	// 如果是全局数据变量。
 	if((typeToken->type & T_ARRAY) && sec)
 	{
 		memcpy(sec->data + c, get_current_token(), strlen(get_current_token()));
@@ -385,23 +389,42 @@ void initializer(Type * typeToken, int c, Section * sec)
 	}
 	else
 	{
+		// 解析右值。
 		assignment_expression();
-		init_variable(typeToken, sec, c, 0);
+		init_variable(typeToken, sec, c); // , 0);
 	}
 }
 
 /************************************************************************/
 /* 功能：变量初始化                                                     */
-/* type：变量类型                                                       */
-/* sec：变量所在节                                                      */
-/* c：变量相关值                                                        */
-/* v：变量符号编号                                                      */
+/* type：变量类型。也就是左值的类型。                                   */
+/* sec： 变量所在节。对于全局变量和字符串常量为相应节地址。             */
+/*                   对于局部变量为NULL。                               */
+/* c：   变量相关值。对于全局变量和字符串常量为节内部偏移量。           */
+/* v：   变量符号编号。这个值好像没有用。                               */
 /************************************************************************/
-void init_variable(Type * type, Section * sec, int c, int v)
+/* 这个函数在initializer中，在assignment_expression函数后，被调用。     */
+/* 这里涉及到我们如何理解赋值操作。                                     */
+/* 对于计算机来说，左值所代表的变量就是内存中的一个地址。               */ 
+/* 因此上，对于全局变量和字符串常量，他就是一个节地址。                 */
+/*       而对于对于局部变量，他就是一个operand_stack元素。              */
+/************************************************************************/
+/*   1. 在assignment_expression函数中，                                 */
+/*      右值已经在primary_expression函数中被压栈。                      */
+/*   2. 全局变量和字符串常量的情况：                                    */
+/*      这两种情况数据保存在节上，我们只需要写对应的节即可。            */
+/*   3. 局部变量的情况：                                                */
+/*      当我们进入init_variable函数的时候，右值位于栈顶。               */
+/*      我们只需要把左值类型压栈，让栈顶元素为左值。次栈顶元素为右值。  */
+/*      之后执行operand_swap。让栈顶元素变为右值。次栈顶元素变为左值。  */
+/*      最后调用store0_1将栈顶右值存入次栈顶左值即可。                  */
+/************************************************************************/
+void init_variable(Type * type, Section * sec, int c) // , int v)
 {
 	// 2022/11/14
 	int bt;
 	void * ptr;
+	// 如果节地址不为空，说明初始化的是全局变量和字符串常量。
 	if (sec)
 	{
 		if(operand_stack_top)
@@ -411,7 +434,9 @@ void init_variable(Type * type, Section * sec, int c, int v)
 				print_error("Use constant to initialize the global variable");
 			}
 		}
+		// 得到数据类型。
 		bt = type->type & T_BTYPE;
+		// 得到保存全局变量和字符串常量的内存位置。
 		ptr = sec->data + c;
 		
 		switch(bt) {
@@ -434,6 +459,7 @@ void init_variable(Type * type, Section * sec, int c, int v)
 		}
 		operand_pop();
 	}
+	// 如果节地址不为空，说明初始化的是放在栈上的局部变量。
 	else
 	{
 		if (type->type & T_ARRAY)
@@ -457,9 +483,16 @@ void init_variable(Type * type, Section * sec, int c, int v)
 		}
 		else
 		{
+			// 对于局部变量，左值就是一个operand_stack元素。只有类型才有用。直接把类型压栈即可。
+			// 在压栈之前，栈顶元素为右值。压栈以后，栈顶元素为左值。和次栈顶元素为右值。
 			operand_push(type, SC_LOCAL | SC_LVAL, c);
+			// 交换栈顶元素和次栈顶元素。栈顶元素变为右值。次栈顶元素变为左值。
 			operand_swap();
-			store_one();
+			// 将栈顶操作数也就是右值，存入次栈顶操作数，也就是左值中。
+			store_zero_to_one();
+			// 赋值完成后，栈顶操作数也就是右值就没用了。直接弹出舍弃即可。
+			// 这里补充一下，我们现在是生成机器码。
+			// 如果右值是表达式，在前面的assignment_expression函数中生成对应的机器码。因此上不用担心。
 			operand_pop();
 		}
 	}
@@ -615,15 +648,15 @@ void if_statement(int *bsym, int *csym)
 		// 为ELSE语句生成跳转指令。
 		else_jmp = gen_jmpforward(0);
 		// 为IF语句填人相对地址。
-		backpatch(if_jmp, ind);
+		backpatch(if_jmp, sec_text_opcode_ind);
 		statement(bsym, csym);
 		// 为ELSE语句填人相对地址。
-		backpatch(else_jmp, ind);
+		backpatch(else_jmp, sec_text_opcode_ind);
 	}
 	else
 	{
 		// 为IF语句填人相对地址。
-		backpatch(if_jmp, ind);
+		backpatch(if_jmp, sec_text_opcode_ind);
 	}
 }	
 
@@ -696,9 +729,9 @@ void for_statement(int *bsym, int *csym)
 		skip_token(TK_SEMICOLON);
 	}
 	// 现在我们位于for语句的第一个分号位置。首先记录下循环头的退出条件的位置。
-	for_exit_cond_address = ind;
+	for_exit_cond_address = sec_text_opcode_ind;
 	// 初始化循环头的累加条件的位置。因为循环累加条件有可能不存在。
-	for_inc_address = ind;
+	for_inc_address = sec_text_opcode_ind;
 	// 初始化循环体结束位置。
 	for_end_address = 0;
 	// b = 0;
@@ -720,7 +753,7 @@ void for_statement(int *bsym, int *csym)
 		// 生成循环头的不退出的跳转语句。例如：6. JMP scc_anal. 00401276
 		for_body_address = gen_jmpforward(0);
 		// 代码执行到这里我们来到了循环头的累加部分。记录下这个位置。
-		for_inc_address = ind;
+		for_inc_address = sec_text_opcode_ind;
 		// 处理循环头的累加部分。
 		expression();
 		operand_pop();
@@ -728,7 +761,7 @@ void for_statement(int *bsym, int *csym)
 		// 例如：10. JMP SHORT scc_anal.0040125A
 		gen_jmpbackward(for_exit_cond_address);
 		// 执行到了这里，我们来到了循环循环体。我们可以填充循环体的起始地址了。
-		backpatch(for_body_address, ind);
+		backpatch(for_body_address, sec_text_opcode_ind);
 		syntax_state = SNTX_LF_HT;
 		skip_token(TK_CLOSEPA);
 	}
@@ -744,7 +777,7 @@ void for_statement(int *bsym, int *csym)
 	// 例如：18. JMP  SHORT scc_anal.0040126B
 	gen_jmpbackward(for_inc_address);
 	// 执行到了这里，我们可以填充循环体的结束地址了。
-	backpatch(for_end_address, ind);
+	backpatch(for_end_address, sec_text_opcode_ind);
 	// 这句话好像是多余的。因为b一直是零。而且如果传入0，backpatch什么都不会做。
 	// backpatch(b, for_inc_address);
 }
@@ -913,7 +946,7 @@ void assignment_expression()
 		check_leftvalue();
 		get_token();
 		assignment_expression();
-		store_one();
+		store_zero_to_one();
 	}
 }
 
@@ -1138,7 +1171,11 @@ void cancel_lvalue()
 
 void indirection()
 {
-	// 简介寻址必须是指针。
+	// 间接寻址必须是指针。如果变量不是指针，就报错。
+	// 例如：struct  point  pt; pt->x++;
+	// 此时，pt是结构体，类型等于T_STRUCT，而不是T_PTR，就会报错。
+	// 而如果写成：struct  point * ptPtr; pt->x++;
+	// 此时，pt是结构体指针，类型等于T_PTR，就不会报错。
 	if ((operand_stack_top->type.type & T_BTYPE) != T_PTR)
 	{
 		// 除非是函数。
@@ -1148,6 +1185,7 @@ void indirection()
 		}
 		print_error("Need pointer");
 	}
+	// 如果是本地变量，则该变量位于栈上。只需要讲
 	if (operand_stack_top->storage_class & SC_LVAL)
 	{
 		load_one(REG_ANY, operand_stack_top);
@@ -1330,6 +1368,7 @@ void postfix_expression()
 	primary_expression();
 	while (1)
 	{
+		// 如果是结构体成员运算符"->"或"."。
 		if (get_current_token_type() == TK_DOT               // | <TK_DOT><IDENTIFIER>
 			|| get_current_token_type() == TK_POINTSTO)      // | <TK_POINTSTO><IDENTIFIER>
 		{
@@ -1349,6 +1388,7 @@ void postfix_expression()
 
 			// token |= SC_MEMBER;
 			set_current_token_type(get_current_token_type() | SC_MEMBER);
+			
 			while ((symbol = symbol->next) != NULL)
 			{
 				if (symbol->related_value == get_current_token_type())
@@ -1907,7 +1947,9 @@ void external_declaration(e_StorageClass iSaveType)
 /* has_in it：是否需要进行初始化                                        */
 /* v：变量符号编号                                                      */
 /* addr(输出) ：变量存储地址                                            */
-/* 返回值：变量存储节                                                   */
+/* 返回值：变量存储节。                                                 */
+/*         对于全局变量和字符串常量返回对应节的地址。并更新偏移量。     */
+/*         对于局部变量返回NULL。                                       */
 /************************************************************************/
 Section * allocate_storage(Type * typeCurrent, int storage_class, int has_init, int token_code, int *addr)
 {

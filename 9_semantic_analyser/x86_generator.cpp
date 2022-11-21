@@ -1,19 +1,17 @@
 // x86_generator.cpp : Defines the entry point for the console application.
 //
 
-#include "stdafx.h"
 #include "token_code.h"
 #include "get_token.h"
 #include "symbol_table.h"
 #include <windows.h>
 #include "x86_generator.h"
 
-#define OPERAND_STACK_SIZE    1024
 #define FUNC_PROLOG_SIZE      9
 
 /* 本章用到的全局变量 */
 int return_symbol_pos;			// 记录return指令位置
-int ind = 0;					// 指令在代码节位置
+int sec_text_opcode_ind = 0;    // 指令在代码节位置
 int loc = 0;					// 局部变量在栈中位置。
 								// 因为栈顶是零，这个值基本上一直是一个负数。
 								// 
@@ -22,9 +20,9 @@ int func_ret_sub;				// 函数返回释放栈空间大小。默认是零。
 								// 但是如果指定了__stdcall关键字，就不是零。
 Symbol *sym_sec_rdata;			// 只读节符号
 
-std::vector<Operand> operand_stack;
-std::vector<Operand>::iterator operand_stack_top = NULL;
-std::vector<Operand>::iterator operand_stack_second = NULL;
+extern std::vector<Operand> operand_stack;
+extern std::vector<Operand>::iterator operand_stack_top ;
+extern std::vector<Operand>::iterator operand_stack_last_top ;
 
 extern std::vector<Section> vecSection;
 extern  Section *sec_text,			// 代码节
@@ -40,73 +38,6 @@ Type char_pointer_type,		// 字符串指针
 	 int_type,				// int类型
 	 default_func_type;		// 缺省函数类型
 
-/************************************************************************/
-/*  功能：操作数入栈                                                    */
-/*  type：操作数数据类型                                                */
-/*  r：操作数存储类型                                                   */
-/*  value：操作数值                                                     */
-/************************************************************************/
-void operand_push(Type* type, int storage_class, int value)
-{
-	Operand operand;
-	if (operand_stack.size() > OPERAND_STACK_SIZE)
-	{
-		printf("No memory.\n");
-	}
-
-	operand.type = *type;
-	operand.storage_class    = storage_class;
-	operand.value = value;
-	operand_stack.push_back(operand);
-
-	operand_stack_top = operand_stack.end();
-	if (operand_stack.size() >= 2)
-		operand_stack_second = operand_stack_top - 1;
-	else
-		operand_stack_second = NULL;
-}
-
-/************************************************************************/
-/* 功能：弹出栈顶操作数                                                 */
-/************************************************************************/
-void operand_pop()
-{
-	operand_stack.pop_back();
-	
-	operand_stack_top = operand_stack.end();
-	if (operand_stack.size() >= 2)
-		operand_stack_second = operand_stack_top - 1;
-	else
-		operand_stack_second = NULL;
-}
-
-/************************************************************************/
-/*  功能：交换栈顶两个操作数顺序                                        */
-/************************************************************************/
-void operand_swap()
-{
-	Operand tmp ;
-	if (operand_stack.size() >= 2)
-	{
-		tmp = *operand_stack_top;
-		*operand_stack_top = *operand_stack_second;
-		*operand_stack_second = tmp;
-	}
-}
-
-/************************************************************************/
-/*  功能：操作数赋值                                                    */
-/*  t：操作数数据类型                                                   */
-/*  r：操作数存储类型                                                   */
-/*  value：操作数值                                                     */
-/************************************************************************/
-void operand_assign(Operand * opd, int token_code, int storage_class, int value)
-{
-	opd->type.type = token_code;
-	opd->storage_class = storage_class;
-	opd->value = value;
-}
-
 // Operation generation functions
 /************************************************************************/
 /*  功能：向代码节写人一个字节                                          */
@@ -115,13 +46,17 @@ void operand_assign(Operand * opd, int token_code, int storage_class, int value)
 void gen_byte(char c)
 {
 	int indNext;
-	indNext = ind + 1;
+	indNext = sec_text_opcode_ind + 1;
+	// 如果发现代码节已经分配的空间不够。
 	if (indNext > sec_text->data_allocated)
 	{
+		// 重新分配代码节空间。
 		section_realloc(sec_text, indNext);
 	}
-	sec_text->data[ind] = c;
-	ind = indNext;
+	// 向代码节写人一个字节。
+	sec_text->data[sec_text_opcode_ind] = c;
+	// 移动写入下标。
+	sec_text_opcode_ind = indNext;
 }
 
 /************************************************************************/
@@ -178,6 +113,10 @@ void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c)
 	{
 		gen_byte(mod | reg_opcode | (r_m & SC_VALMASK));
 	}
+	// 还是用 char a = g_char; 语句对应的机器码为例：
+	// 	0FBE 0500204000
+	// 前两个字节0FBE，前面已经生成好了。这里生成后面的部分。
+	// 其中gen_byte生成05，gen_addr32生成后面的部分。
 	else if ((r_m & SC_VALMASK) == SC_GLOBAL)
 	{
 		// mod=00 r=101 disp32  8b 05 50 30 40 00  MOV EAX,DWORD PTR DS:[403050]
@@ -192,8 +131,13 @@ void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c)
 		// mod=01 r=101 disp8[EBP] 89 45 fc MOV DWORD PTR SS:[EBP-4],EAX
 		if (c == c)
 		{
+			// 还是用 char a = g_char; 语句对应的机器码为例：
+			// 	0FBE 0500204000
+			//  8845FF
+			// 这里生成上面的第二句。这就是45的来源。
 			// 0x45转成二进制就是0100 0101
 			gen_byte(0x45 | reg_opcode);
+			// 这里生成上面的第二句。这就是FF的来源。
 			gen_byte(c);
 		}
 		else
@@ -232,7 +176,8 @@ void gen_addr32(int r, Symbol * sym, int c)
 {
 	if (r & SC_SYM)
 	{
-  		coffreloc_add(sec_text, sym, ind, IMAGE_REL_I386_DIR32);
+  		coffreloc_add(sec_text, sym, 
+			sec_text_opcode_ind, IMAGE_REL_I386_DIR32);
 	}
 	gen_dword(c);
 }
@@ -242,6 +187,13 @@ void gen_addr32(int r, Symbol * sym, int c)
 /*  r：符号存储类型                                                     */
 /*  opd：操作数指针                                                     */
 /************************************************************************/
+/* 为了方便讨论，首先假设全局变量定义如下：                             */
+/*    char g_char = 'a';                                                */
+/*    short g_short = 123;                                              */
+/*    int g_int = 123456;                                               */
+/*    char g_str1[] = "g_strl";                                         */
+/*    char* g_str2 = "g_str2";                                          */  
+/************************************************************************/ 
 void load(int storage_class, Operand * opd)
 {
 	int v, ft, fc, fr;
@@ -252,6 +204,16 @@ void load(int storage_class, Operand * opd)
 	v = fr & SC_VALMASK;
 	if (fr & SC_LVAL)    // 左值
 	{
+		// 这个分支的汇编机器码生成方法如下：
+		// 例如：一条形如 char a = g_char; 的语句包括如下的指令。
+		//    ; MOVSX - 带符号扩展传送指令
+		//    MOVSX EAX,  BYTE PTR DS: [402000]
+		//    MOV BYTE PTR SS: [EBP-1], AL
+		// 正如上面的例子中给出的。a为左值。且为char。
+		// 对应的机器码为：
+		// 	0FBE 0500204000
+		//  8845FF
+		// 这就是下面代码中的神秘数字的来源。
 		if ((ft & T_BTYPE) == T_CHAR)
 		{
 			// movsx -- move with sign-extention	
@@ -318,29 +280,70 @@ void load(int storage_class, Operand * opd)
 /* r：符号存储类型                                                      */
 /* opd：操作数指针                                                      */
 /************************************************************************/
+/* 一条形如 char a = g_char; 的语句生成如下的指令中的第二句。           */
+/*    ; MOVSX - 带符号扩展传送指令                                      */
+/*    MOVSX EAX,  BYTE PTR DS: [402000]                                 */
+/*    MOV BYTE PTR SS: [EBP-1], AL                                      */
+/* 第二句对应的机器码如下： 8845 FF                                     */
+/* 一条形如 short b = g_short; 的语句生成如下的指令中的第二句。         */
+/*    MOVSX EAX,  WORD PTR DS: [402002]                                 */
+/*    MOV WORD PTR SS: [EBP-2], AX                                      */
+/* 第二句对应的机器码如下： 66: 8945FE                                  */
+/* 一条形如 c = g_int; 的语句生成如下的指令中的第二句。                 */
+/*    MOV  EAX,  DWORD PTR DS: [402004]                                 */
+/*    MOV  DWORD PTR SS: [EBP-4], EAX                                   */
+/* 第二句对应的机器码如下： 8945 FC                                     */
+/************************************************************************/
+/* 可以看出来，上面三种情况的综合逻辑如下：                             */
+/*    1. 针对short赋值生成前缀0x66。                                    */
+/*    2. 对于char赋值生成机器码0x88。                                   */
+/*    3. 对于short和int赋值生成机器码0x89。                             */
+/*    4. 生成后面的部分。                                               */
+/************************************************************************/
+#define   STORE_T_SHORT_PREFIX			0x66
+#define   STORE_CHAR_OPCODE				0x88
+#define   STORE_SHORT_INT_OPCODE        0x89
 void store(int r, Operand * opd)
 {
 	int fr, bt;
 	fr = opd->storage_class & SC_VALMASK;
 	bt = opd->type.type & T_BTYPE;
-
+	// 1. 针对short赋值生成前缀0x66。
+	// 用 short b = g_short; 语句对应的机器码为例：
+	// 	0FBF 0502204000
+	//  66: 8945FE
+	// 这里生成上面的第二句中的前缀。这就是66的来源。
 	if (bt == T_SHORT)
 	{
-		gen_prefix(0x66); //Operand-size override, 66H
+		gen_prefix(STORE_T_SHORT_PREFIX); //Operand-size override, 66H
 	}
-
+	
+	// 2. 对于char赋值生成机器码0x88。
+	// 用 char a = g_char; 语句对应的机器码为例：
+	// 	0FBE05 00204000
+	//  8845 FF
+	// 这里生成上面的第二句。这就是88的来源。
 	if (bt == T_CHAR)
 	{
 		// 88 /r	MOV r/m,r8	Move r8 to r/m8
-		gen_opcodeOne(0x88);
+		gen_opcodeOne(STORE_CHAR_OPCODE);
 	}
+	// 3. 对于short和int赋值生成机器码0x89。 
+	// 用 int c = g_int; 语句对应的机器码为例：
+	// 	8B05 04204000
+	//  8945 FC
+	// 这里生成上面的第二句。这就是89的来源。
+	// 这里也同时处理了 b = g_short; 语句对应的机器码生成。
 	else
 	{
 		// 89 /r	MOV r/m32,r32	Move r32 to r/m32
-		gen_opcodeOne(0x89);
+		gen_opcodeOne(STORE_SHORT_INT_OPCODE);
 	}
-
-	if (fr == SC_GLOBAL || fr == SC_LOCAL || (opd->storage_class & SC_LVAL))
+	// 4. 生成后面的部分。
+	// 对于常量，全局变量，函数定义和局部变量，也就是栈中变量，还有左值。
+	if (fr == SC_GLOBAL ||				 // 常量，全局变量，函数定义
+		fr == SC_LOCAL  ||				 // 局部变量，也就是栈中变量
+		(opd->storage_class & SC_LVAL))  // 左值
 	{
 		gen_modrm(ADDR_OTHER, r, opd->storage_class, opd->sym, opd->value);
 	}
@@ -355,13 +358,16 @@ void store(int r, Operand * opd)
 int load_one(int rc, Operand * opd)
 {
 	int storage_class ;
+	// 获得存储类型。
 	storage_class = opd->storage_class & SC_VALMASK;
 	// 需要加载到寄存器中情况：
 	// 1.栈顶操作数目前尝未分配寄存器
 	// 2.栈顶操作数已分配寄存器，但为左值 *p
-	if (storage_class > SC_GLOBAL || (opd->storage_class & SC_LVAL))
+	if (storage_class > SC_GLOBAL ||			// 不是全局变量。
+		(opd->storage_class & SC_LVAL))			// 为左值。
 	{
-	//	storage_class = allocate_reg(rc);
+		storage_class = allocate_reg(rc);		// 分配一个空闲的寄存器。
+		// 现在我们得到了寄存器，我们只需要将栈顶操作数加载到这个寄存器中。
 		load(storage_class, opd);
 	}
 	opd->storage_class = storage_class;
@@ -379,11 +385,17 @@ void load_two(int rc1, int rc2)
 	// 8B 45 DC 
 	load_one(rc2, operand_stack_top);
 	// 8B 4D DC
-	load_one(rc2, operand_stack_second);
+	load_one(rc2, operand_stack_last_top);
 }
 
 /************************************************************************/
-/* 功能：将栈顶操作数存人次栈顶操作数中                                 */
+/* 功能：将栈顶操作数存入次栈顶操作数中。                               */
+/*     也就是把栈里面的第零个元素存入第一个元素。                       */
+/*     这就是store_zero_to_one的含义。                                  */
+/*     通过阅读下面的例子，可以看出来栈顶保存的是右值。                 */
+/*     而次栈顶保存的是左值。这和我们的语法解析恰好也是对应的。         */
+/*     我们在处理赋值语句的时候，一定是先获得左值，之后压栈。           */
+/*     之后获得赋值等号，让自己进入最后获得右值。在                                           */
 /************************************************************************/
 /* 一条形如 char a='a'; 的语句包括如下的指令。                          */
 /*  1. MOV EAX, 61                                                      */
@@ -408,7 +420,7 @@ void load_two(int rc1, int rc2)
 /*  1. MOV EAX, scc_anal.00403004; ASCII"XYZ"                           */
 /*  2. MOV DWORD PTR SS: [EBP-C], EAX                                   */
 /************************************************************************/
-void store_one()
+void store_zero_to_one()
 {
 	// 根据上面的注释可以看出来，这个赋值操作包含两个部分：
 	// 一个是取出右值。一个是放入左值所在的内存空间。
@@ -416,17 +428,17 @@ void store_one()
 	// 取出位于栈顶的右值，生成机器码。同时返回保存的寄存器。
 	storage_class = load_one(REG_ANY, operand_stack_top);
 	// 如果次栈顶操作数为寄存器溢出存放栈中。
-	if ((operand_stack_second->storage_class & SC_VALMASK) == SC_LLOCAL)
+	if ((operand_stack_last_top->storage_class & SC_VALMASK) == SC_LLOCAL)
 	{
 		Operand opd;
 	//	t = allocate_reg(REG_ANY);
 		operand_assign(&opd, T_INT, SC_LOCAL | SC_LVAL, 
-			operand_stack_second->value);
+			operand_stack_last_top->value);
 		load(t, &opd);
-		operand_stack_second->storage_class = t | SC_LVAL;
+		operand_stack_last_top->storage_class = t | SC_LVAL;
 	}
 	// 生成将寄存器'r'中的值存入操作数'opd'的机器码。
-	store(storage_class, operand_stack_second);
+	store(storage_class, operand_stack_last_top);
 	// 就交换栈顶操作数和次栈顶操作数。
 	operand_swap();
 	// 弹出上面交换过来的次栈顶操作数。和上面的操作结合等于删除次栈顶操作数。
@@ -461,7 +473,7 @@ void gen_op(int op)
 	int u, btOne, btTwo;
 	Type typeOne;
 
-	btOne = operand_stack_second->type.type & T_BTYPE;
+	btOne = operand_stack_last_top->type.type & T_BTYPE;
 	btTwo = operand_stack_top->type.type & T_BTYPE;
 
 	// 如果比较的两个元素有一个是指针。
@@ -487,11 +499,11 @@ void gen_op(int op)
 				printf("Only support - and >,<,>=.<= \n");
 			}
 			// 取出被操作数的大小。例如char * ptr_one的大小就是1。
-			u = pointed_size(&operand_stack_second->type);
+			u = pointed_size(&operand_stack_last_top->type);
 			gen_opInteger(op);
 			operand_stack_top->type.type = T_INT;
 			operand_push(&int_type, SC_GLOBAL, 
-				pointed_size(&operand_stack_second->type));
+				pointed_size(&operand_stack_last_top->type));
 			gen_op(TK_DIVIDE);
 		}
 		// 两个操作数一个是指针，另一个不是指针，并且非关系运算
@@ -505,9 +517,9 @@ void gen_op(int op)
 			{
 				operand_swap();
 			}
-			typeOne = operand_stack_second->type;
+			typeOne = operand_stack_last_top->type;
 			operand_push(&int_type, SC_GLOBAL, 
-				pointed_size(&operand_stack_second->type));
+				pointed_size(&operand_stack_last_top->type));
 			gen_op(TK_STAR);
 			gen_opInteger(op);
 			operand_stack_top->type = typeOne;
@@ -545,7 +557,7 @@ void gen_opInteger(int op)
 		break;
 	case TK_STAR:
 		load_two(REG_ANY, REG_ANY);
-		storage_class  = operand_stack_second->storage_class;
+		storage_class  = operand_stack_last_top->storage_class;
 		fr = operand_stack_top->storage_class;
 		operand_pop();
 		gen_opcodeTwo(0x0f, 0xaf);
@@ -555,7 +567,7 @@ void gen_opInteger(int op)
 	case TK_MOD:
 		opc = 7;
 		load_two(REG_EAX, REG_ECX);
-		storage_class  = operand_stack_second->storage_class;
+		storage_class  = operand_stack_last_top->storage_class;
 		fr = operand_stack_top->storage_class;
 		operand_pop();
 		spill_reg(REG_EDX);
@@ -589,7 +601,7 @@ void gen_opTwoInteger(int opc, int op)
 	int storage_class, fr, c;
 	if ((operand_stack_top->storage_class & (SC_VALMASK | SC_LOCAL | SC_SYM)) == SC_GLOBAL)
 	{
-		storage_class = load_one(REG_ANY, operand_stack_second);
+		storage_class = load_one(REG_ANY, operand_stack_last_top);
 		c = operand_stack_top->value;
 		if (c == (char)c)
 		{
@@ -614,7 +626,7 @@ void gen_opTwoInteger(int opc, int op)
 	else
 	{
 		load_two(REG_ANY, REG_ANY);
-		storage_class  = operand_stack_second->storage_class;
+		storage_class  = operand_stack_last_top->storage_class;
 		fr = operand_stack_top->storage_class;
 		gen_opcodeOne((opc << 3) | 0x01);
 		gen_modrm(ADDR_REG, fr, storage_class, NULL, 0);
@@ -653,14 +665,14 @@ void gen_opTwoInteger(int opc, int op)
 int makelist(int s)
 {
 	int indOne;
-	indOne = ind + 4;
+	indOne = sec_text_opcode_ind + 4;
 	if (indOne > sec_text->data_allocated)
 	{
 		section_realloc(sec_text, indOne);
 	}
-	*(int *)(sec_text->data + ind) = s;
-	s = ind;
-	ind = indOne;
+	*(int *)(sec_text->data + sec_text_opcode_ind) = s;
+	s = sec_text_opcode_ind;
+	sec_text_opcode_ind = indOne;
 	return s;
 }
 
@@ -702,7 +714,7 @@ int gen_jmpforward(int t)
 void gen_jmpbackward(int a)
 {
 	int r;
-	r = a - ind - 1;
+	r = a - sec_text_opcode_ind - 1;
 	if (r = (char)r)
 	{
 		// EB cb	JMP rel8	
@@ -715,7 +727,7 @@ void gen_jmpbackward(int a)
 		// E9 cd	JMP rel32	
 		// Jump short,relative,displacement relative to next instruction
 		gen_opcodeOne(0xe9);
-		gen_dword(a - ind - 4);
+		gen_dword(a - sec_text_opcode_ind - 4);
 	}
 }
 
@@ -784,8 +796,8 @@ void gen_prolog(Type *func_type)
 	addr = 8;
 	loc  = 0;
 	// 记录了函数体开始，以便函数体结束时填充函数头，因为那时才能确定开辟的栈大小。
-	func_begin_ind = ind;
-	ind += FUNC_PROLOG_SIZE;
+	func_begin_ind = sec_text_opcode_ind;
+	sec_text_opcode_ind += FUNC_PROLOG_SIZE;
 
 	if (sym->typeSymbol.type == T_STRUCT)
 	{
@@ -858,8 +870,8 @@ void gen_epilog()
 	}
 	v = calc_align(-loc, 4);
 	// 把ind设置为之前记录函数体开始的位置。
-	saved_ind = ind;
-	ind = func_begin_ind;
+	saved_ind = sec_text_opcode_ind;
+	sec_text_opcode_ind = func_begin_ind;
 
 	// 1. PUSH--Push Word or Doubleword Onto the Stack
 	//    50+rd	PUSH r32	Push r32
@@ -879,7 +891,7 @@ void gen_epilog()
 	gen_dword(v);
 
 	// 恢复ind的值。
-	ind = saved_ind;
+	sec_text_opcode_ind = saved_ind;
 }
 
 /***********************************************************
@@ -943,7 +955,8 @@ void gen_call()
 	int r;
 	if (operand_stack_top->storage_class & (SC_VALMASK | SC_LVAL) == SC_GLOBAL)
 	{
-		coffreloc_add(sec_text, operand_stack_top->sym, ind + 1, IMAGE_REL_I386_REL32);
+		coffreloc_add(sec_text, operand_stack_top->sym, 
+			sec_text_opcode_ind + 1, IMAGE_REL_I386_REL32);
 		gen_opcodeOne(0xe8);
 		gen_dword(operand_stack_top->value - 4);
 	}

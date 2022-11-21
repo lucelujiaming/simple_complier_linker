@@ -74,13 +74,17 @@ void section_realloc(Section * sec, int new_size)
 {
 	int size;
 	char * data ;
+	// 取得当前的空间大小。这个在section_new中初始化为8。
 	size = sec->data_allocated;
+	// 当前的空间大小乘以2，直到满足节数据新长度。显然这个值为8的幂。
 	while(size < new_size)
 		size = size * 2;
+	// 使用realloc更改已经配置的内存空间。
 	data = (char *)realloc(sec->data, size);
 	if(data == NULL)
 		printf("realloc error");
-
+	// 因为是更改已经配置的内存空间。
+	// 因此上，已经配置过空间被保留，我们只需要初始化新分配的空间。
 	memset(data + sec->data_allocated, 0x00, size - sec->data_allocated);
 	sec->data = data;
 	sec->data_allocated = size;
@@ -269,11 +273,14 @@ void coffreloc_add(Section * sec, Symbol * sym, int offset, char type)
 {
 	int cfsym;
 	char * name;
+	// 如果符号表没有对应的关联值，就为其添加。
 	if(!sym->related_value)
 		coffsym_add_update(sym, 0, 
 			IMAGE_SYM_UNDEFINED, 0,  // CST_FUNC,
 			IMAGE_SYM_CLASS_EXTERNAL);
+	// 根据符号编码获得单词字符串.
 	name = ((TkWord)tktable[sym->token_code]).spelling;
+	// 根据单词字符串查找COFF符号。
 	cfsym = coffsym_search(sec_symtab, name);
 	coffreloc_redirect_add(offset, cfsym, sec->index, type);
 }

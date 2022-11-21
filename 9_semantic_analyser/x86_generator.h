@@ -1,21 +1,7 @@
 #ifndef X86_GENERATOR_H
 #define X86_GENERATOR_H
 
-#define OPSTACK_SIZE 256
-
-typedef struct Operand_t{
-	Type type;							// 数据类型
-	unsigned short storage_class;       // 寄存器或存储类型
-	int value;							// 常量值
-	struct Symbol * sym;				// 关联符号
-} Operand;
-
-// Operand operation functions
-void operand_push(Type* type, int r, int value);
-void operand_pop();
-void operand_swap();
-void operand_assign(Operand *opd, int t, int r, int v);
-
+#include "operand_stack.h"
 
 // Operand functions
 void gen_byte(char c);
@@ -29,7 +15,7 @@ void load(int r, Operand * opd);
 void store(int r, Operand * opd);
 int load_one(int rc, Operand * opd);
 void load_two(int rc1, int rc2);
-void store_one();
+void store_zero_to_one();
 void gen_op(int op);
 void gen_opInteger(int op);
 void gen_opTwoInteger(int opc, int op);
@@ -48,4 +34,6 @@ int gen_jcc(int t);
 int gen_jmpforward(int t);
 void gen_jmpbackward(int a);
 Type *pointed_type(Type *t);
+
+int allocate_reg(int rc);
 #endif

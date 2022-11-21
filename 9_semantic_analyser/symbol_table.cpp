@@ -7,6 +7,9 @@
 #include "x86_generator.h"
 
 
+std::vector<Operand> operand_stack;
+extern std::vector<Operand>::iterator operand_stack_top;
+
 std::vector<Symbol> global_sym_stack;  //全局符号栈
 std::vector<Symbol> local_sym_stack;   //局部符号栈
 
@@ -322,6 +325,10 @@ void print_all_TkWord()
 
 void init()
 {
+	operand_stack.reserve(OPSTACK_SIZE);
+	// The begin is reserved
+	operand_stack_top = operand_stack.begin();
+	
 	global_sym_stack.reserve(1024);
 	local_sym_stack.reserve(1024);
 	init_lex();
