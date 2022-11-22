@@ -2,15 +2,9 @@
 #define X86_GENERATOR_H
 
 #include "operand_stack.h"
+#include "opcode_generator.h"
 
-// Operand functions
-void gen_byte(char c);
-void gen_prefix(char opcode);
-void gen_opcodeOne(unsigned char opcode);
-void gen_opcodeTwo(unsigned char first, unsigned char second);
 void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c);
-void gen_dword(unsigned int c);
-void gen_addr32(int r, Symbol * sym, int c);
 void load(int r, Operand * opd);
 void store(int r, Operand * opd);
 int load_one(int rc, Operand * opd);

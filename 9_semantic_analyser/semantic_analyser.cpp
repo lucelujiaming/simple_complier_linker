@@ -7,6 +7,10 @@
 
 int main(int argc, char* argv[])
 {
+	if (argc < 2)
+	{
+		print_error("No program");
+	}
 	init();
 	token_init(argv[1]);
 	get_token();

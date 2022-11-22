@@ -438,7 +438,8 @@ int get_token()
 		{
 			token_type=TK_IDENT;
 		}
-		tkword_insert(token);
+		TkWord * retTkWord = tkword_insert(token);
+		// token_type = retTkWord->tkcode;
 		syntax_indent();
 		return token_type;
 	}
@@ -466,7 +467,9 @@ int get_token()
 	{
 		token_type=TK_IDENT;
 	}
-	tkword_insert(token);
+	TkWord * retTkWord = tkword_insert(token);
+	// Use token_type as index in the TkWord vector
+	token_type = retTkWord->tkcode;
   }
   
   syntax_indent();
@@ -541,11 +544,14 @@ void color_single_char(int lex_state, int tokenType, char printChar)
 
 void token_init(char * strFilename)
 {
-	program_buffer = (char *)malloc(40960);
-	load_program(program_buffer, strFilename);
+	if (strFilename)
+	{
+		program_buffer = (char *)malloc(40960);
+		load_program(program_buffer, strFilename);
 
-	lineNum = 1;
-	// init_lex();
+		lineNum = 1;
+		// init_lex();
+	}
 }
 
 void token_cleanup()
@@ -565,12 +571,16 @@ TkWord* tkword_insert(char * strNewToken) // , e_TokenCode tokenCode)
 //	if(token_type == TK_CSTR)
 //			tktable.push_back(std::string(strNewToken));
 	TkWord tkWord;
+#if 0
 	printf("\n -- tkword_insert -- ");
 	for (int i = 42; i < tktable.size(); i++)
 	{
 		printf(" (%s, %08X, %08X) ", tktable[i].spelling, tktable[i].sym_struct, tktable[i].sym_identifier);
 	}
 	printf(" ---- \n");
+#else
+	int i = 0;
+#endif
 	for (i = 0; i < tktable.size(); i++)
 	{
 		// printf("tktable[%d].spelling = %s \n", i, tktable[i].spelling);
@@ -583,7 +593,10 @@ TkWord* tkword_insert(char * strNewToken) // , e_TokenCode tokenCode)
 	length = strlen(strNewToken);
 	tkWord.spelling = (char *)malloc(length + 1); 
 	strcpy(tkWord.spelling, strNewToken);
-	tkWord.tkcode = tktable.size() - 1;
+	// tkWord.tkcode = tktable.size() - 1;
+	// It is a new item. We should use the tktable.size() 
+	// rather than tktable.size() - 1
+	tkWord.tkcode = tktable.size() ;
 	tkWord.sym_identifier = NULL;
 	tkWord.sym_struct = NULL;
 	

@@ -38,56 +38,6 @@ Type char_pointer_type,		// 字符串指针
 	 int_type,				// int类型
 	 default_func_type;		// 缺省函数类型
 
-// Operation generation functions
-/************************************************************************/
-/*  功能：向代码节写人一个字节                                          */
-/*  c：字节值                                                           */
-/************************************************************************/
-void gen_byte(char c)
-{
-	int indNext;
-	indNext = sec_text_opcode_ind + 1;
-	// 如果发现代码节已经分配的空间不够。
-	if (indNext > sec_text->data_allocated)
-	{
-		// 重新分配代码节空间。
-		section_realloc(sec_text, indNext);
-	}
-	// 向代码节写人一个字节。
-	sec_text->data[sec_text_opcode_ind] = c;
-	// 移动写入下标。
-	sec_text_opcode_ind = indNext;
-}
-
-/************************************************************************/
-/*  功能：生成指令前缀                                                  */
-/*  opcode：指令前缀编码                                                */
-/************************************************************************/
-void gen_prefix(char opcode)
-{
-	gen_byte(opcode);
-}
-
-/************************************************************************/
-/*   功能：生成单字节指令                                               */
-/*   opcode：指令编码                                                   */
-/************************************************************************/
-void gen_opcodeOne(unsigned char opcode)
-{
-	gen_byte(opcode);
-}
-
-/************************************************************************/
-/* 功能：生成双字节指令                                                 */
-/* first：指令第一个字节                                                */
-/* second：指令第二个字节                                               */
-/************************************************************************/
-void gen_opcodeTwo(unsigned char first, unsigned char second)
-{
-	gen_byte(first);
-	gen_byte(second);
-}
-
 /************************************************************************/
 /* 功能：生成指令寻址方式字节Mod R/M                                    */
 /* 因为一些Opcode并不是完整的Opcode码，它需要ModR/M字节进行辅助。       */
@@ -153,33 +103,6 @@ void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c)
 		// mod=00 89 01(00 reg_opcode=000 EAX r=001ECX) MOV DWORD PTR DS:[ECX],EAX
 		gen_byte(0x00 | reg_opcode | (r_m & SC_VALMASK));
 	}
-}
-/************************************************************************/
-/*  功能：生成4字节操作数                                               */
-/*  c：4字节操作数                                                      */
-/************************************************************************/
-void gen_dword(unsigned int c)
-{
-	gen_byte(c);
-	gen_byte(c >> 8);
-	gen_byte(c >> 16);
-	gen_byte(c >> 24);
-}
-
-/************************************************************************/
-/* 功能：生成全局符号地址，并增加COFF重定位记录                         */
-/* r：符号存储类型                                                      */
-/* sym：符号指针                                                        */
-/* c：符号关联值                                                        */
-/************************************************************************/
-void gen_addr32(int r, Symbol * sym, int c)
-{
-	if (r & SC_SYM)
-	{
-  		coffreloc_add(sec_text, sym, 
-			sec_text_opcode_ind, IMAGE_REL_I386_DIR32);
-	}
-	gen_dword(c);
 }
 
 /************************************************************************/
@@ -506,7 +429,8 @@ void gen_op(int op)
 				pointed_size(&operand_stack_last_top->type));
 			gen_op(TK_DIVIDE);
 		}
-		// 两个操作数一个是指针，另一个不是指针，并且非关系运算
+		// 两个操作数一个是指针，另一个不是指针，并且非关系运算。
+		// 例如对于a[3]来说，a就是指针，3则不是指针。
 		else 
 		{
 			if (op != TK_MINUS && op != TK_PLUS)
@@ -517,6 +441,7 @@ void gen_op(int op)
 			{
 				operand_swap();
 			}
+			// 得到
 			typeOne = operand_stack_last_top->type;
 			operand_push(&int_type, SC_GLOBAL, 
 				pointed_size(&operand_stack_last_top->type));
@@ -911,7 +836,7 @@ void gen_addsp(int val)
 	else 
 	{
 		// ADD--Add	81 /0 id	ADD r/m32,imm32	Add sign-extended imm32 to r/m32
-		gen_opcodeOne(81);	// add esp, val
+		gen_opcodeOne(0x81);	// add esp, val
 		gen_modrm(ADDR_REG,opc,REG_ESP,NULL,0);
 		gen_dword(val);
     }

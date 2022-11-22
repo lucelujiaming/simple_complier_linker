@@ -157,7 +157,7 @@ Symbol * sec_sym_put(char * sec, int c)
 	Type typeCurrent;
 	typeCurrent.type = T_INT;
 	tp = tkword_insert(sec); // , TK_CINT);
-	token_type = tktable[tktable.size() - 1].tkcode ;
+	token_type = tp->tkcode ;
 	s = sym_push(token_type, &typeCurrent, SC_LOCAL, c);
 	return s;
 }
@@ -217,11 +217,13 @@ void sym_pop(std::vector<Symbol> * pop, Symbol *b)
  **********************************************************/
 Symbol * struct_search(int v)
 {
+#if 0
 	printf("\n -- struct_search -- ");
 	for (int i = 42; i < tktable.size(); i++)
 	{
 		printf(" (%s, %08X, %08X) ", tktable[i].spelling, tktable[i].sym_struct, tktable[i].sym_identifier);
 	}
+#endif
 	printf(" ---- \n");
 	if(tktable.size() > v)
 		return tktable[v].sym_struct;
@@ -236,7 +238,10 @@ Symbol * struct_search(int v)
 Symbol * sym_search(int v)
 {
 	if(tktable.size() > v)
-		return tktable[v].sym_identifier;
+	{
+		TkWord tmpTkWord = tktable[v];
+		return tmpTkWord.sym_identifier;
+	}
 	else
 		return NULL;
 }

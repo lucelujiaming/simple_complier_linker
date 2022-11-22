@@ -381,15 +381,19 @@ void print_all_stack(char* strPrompt)
 /************************************************************************/
 void initializer(Type * typeToken, int c, Section * sec)
 {
-	// 如果是全局数据变量。
+	// 如果是全局数据变量的数组初始化。例如：
+	//     char g_char = 'a';  
+	//     char ss[5] = "SSSSS";
 	if((typeToken->type & T_ARRAY) && sec)
 	{
+	    // 只需要把右值直接复制到节内部即可。复制后sec->data的内容变成：
+		//   "aSSSSS"
 		memcpy(sec->data + c, get_current_token(), strlen(get_current_token()));
 		get_token();
 	}
 	else
 	{
-		// 解析右值。
+		// 解析全局变量，字符串常量和局部变量的右值。
 		assignment_expression();
 		init_variable(typeToken, sec, c); // , 0);
 	}
@@ -409,7 +413,7 @@ void initializer(Type * typeToken, int c, Section * sec)
 /* 因此上，对于全局变量和字符串常量，他就是一个节地址。                 */
 /*       而对于对于局部变量，他就是一个operand_stack元素。              */
 /************************************************************************/
-/*   1. 在assignment_expression函数中，                                 */
+/*   1. 在assignment_expression函数中，全局变量，字符串常量和局部变量的 */
 /*      右值已经在primary_expression函数中被压栈。                      */
 /*   2. 全局变量和字符串常量的情况：                                    */
 /*      这两种情况数据保存在节上，我们只需要写对应的节即可。            */
@@ -417,7 +421,7 @@ void initializer(Type * typeToken, int c, Section * sec)
 /*      当我们进入init_variable函数的时候，右值位于栈顶。               */
 /*      我们只需要把左值类型压栈，让栈顶元素为左值。次栈顶元素为右值。  */
 /*      之后执行operand_swap。让栈顶元素变为右值。次栈顶元素变为左值。  */
-/*      最后调用store0_1将栈顶右值存入次栈顶左值即可。                  */
+/*      最后调用store_zero_to_one将栈顶右值存入次栈顶左值即可。         */
 /************************************************************************/
 void init_variable(Type * type, Section * sec, int c) // , int v)
 {
@@ -438,7 +442,7 @@ void init_variable(Type * type, Section * sec, int c) // , int v)
 		bt = type->type & T_BTYPE;
 		// 得到保存全局变量和字符串常量的内存位置。
 		ptr = sec->data + c;
-		
+		// 更新节中对应的位置。
 		switch(bt) {
 		case T_CHAR:
 			*(char *)ptr = operand_stack_top->value;
@@ -924,7 +928,8 @@ void expression()
 
 void check_leftvalue()
 {
-	if ((operand_stack_top->storage_class & SC_LVAL))
+    // 如果不是左值就报错。
+	if (!(operand_stack_top->storage_class & SC_LVAL))
 	{
 		print_error("Need left value");
 	}
@@ -941,6 +946,9 @@ void check_leftvalue()
 void assignment_expression()
 {
 	equality_expression();
+	// 这里处理连续赋值的情况。例如：
+	//     char a, b;
+    //	   char a = b = 'A';
 	if (get_current_token_type() == TK_ASSIGN)
 	{
 		check_leftvalue();
@@ -1494,9 +1502,9 @@ void primary_expression()
 	// 这里的addr暂时没有用到。这个是用法是首先调用allocate_storage函数，从这个函数中获得。
 	// 这个函数主要用于在空间不够的时候，分配节的空间，同时返回当前符号在节中的存储位置。
 	// 这里的节是一个可执行程序中的概念。例如代码节，数据节，符号表节。
-	int t , r, addr = 0;
+	int token_type , storage_class, addr = 0;
 	Type typeExpression;
-	Symbol *s ;
+	Symbol *token_symbol ;
 	Section * sec = NULL;
 	
 	switch(get_current_token_type()) {
@@ -1508,8 +1516,8 @@ void primary_expression()
 		break;
 	case TK_CSTR:
 		// get_token();
-		t = T_CHAR;
-		typeExpression.type = t;
+		token_type = T_CHAR;
+		typeExpression.type = token_type;
 		mk_pointer(&typeExpression);
 		typeExpression.type |= T_ARRAY;
 		// 字符串常量在.rdata节分配存储空间
@@ -1524,16 +1532,18 @@ void primary_expression()
 		break;
 	default:
 		char tkStr[128];
-		t = get_current_token_type();
+		token_type = get_current_token_type();
 		strcpy(tkStr, get_current_token());
 		get_token();
-		if (t < TK_IDENT) // The problem of String at 07/11, We need the parse_string function
+		// The problem of String at 07/11, We need the parse_string function
+		if (token_type < TK_IDENT) 
 		{
 			// print_error("Need variable or constant\n");
 			printf("Need variable or constant\n");
 		}
-		s = sym_search(t);
-		if(!s)
+		// 根据token_type查找符号。
+		token_symbol = sym_search(token_type);
+		if(!token_symbol)
 		{
 			if (get_current_token_type() != TK_OPENPA)
 			{
@@ -1542,17 +1552,20 @@ void primary_expression()
 				printf("%s does not declare\n", tkStr);
 				// print_error(testStr);
 			}
-			s = func_sym_push(t, &default_func_type);
-			s->storage_class = SC_GLOBAL | SC_SYM;
+			token_symbol = func_sym_push(token_type, &default_func_type);
+			token_symbol->storage_class = SC_GLOBAL | SC_SYM;
 		}
-		r = s->storage_class;
-		operand_push(&s->typeSymbol, r, s->related_value);
-        /* 符号引用，操作数必须记录符号地址 */	
-		if(operand_stack_top)
+		// 取出符号的寄存器存储类型
+		storage_class = token_symbol->storage_class;
+		operand_push(&token_symbol->typeSymbol, 
+			storage_class, token_symbol->related_value);
+        /* 如果取出来的符号是一个符号引用，而不是一个立即数。 */
         if (operand_stack_top->storage_class & SC_SYM) 
 		{   
-			operand_stack_top->sym = s;      
-            operand_stack_top->value = 0;  //用于函数调用，及全局变量引用 printf("g_cc=%c\n",g_cc);
+			// 操作数必须记录符号地址
+			operand_stack_top->sym = token_symbol;      
+			// 因为这个符号是一个符号引用，因此上，常量值无效。
+            operand_stack_top->value = 0;  // 用于函数调用，及全局变量引用 printf("g_cc=%c\n",g_cc);
         }
 		break;
 	}

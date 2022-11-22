@@ -102,6 +102,19 @@ SOURCE=.\get_token.cpp
 # End Source File
 # Begin Source File
 
+SOURCE=.\opcode_generator.cpp
+
+!IF  "$(CFG)" == "semantic_analyser - Win32 Release"
+
+!ELSEIF  "$(CFG)" == "semantic_analyser - Win32 Debug"
+
+# SUBTRACT CPP /YX /Yc /Yu
+
+!ENDIF 
+
+# End Source File
+# Begin Source File
+
 SOURCE=.\operand_stack.cpp
 
 !IF  "$(CFG)" == "semantic_analyser - Win32 Release"
@@ -154,6 +167,10 @@ SOURCE=.\coff_generator.h
 # Begin Source File
 
 SOURCE=.\get_token.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\opcode_generator.h
 # End Source File
 # Begin Source File
 
