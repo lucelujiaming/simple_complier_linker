@@ -7,6 +7,7 @@
 #include "get_token.h"
 #include "x86_generator.h"
 #include "reg_manager.h"
+#include "instruction_operator.h"
 
 e_SynTaxState syntax_state = SNTX_NUL;
 int syntax_level;

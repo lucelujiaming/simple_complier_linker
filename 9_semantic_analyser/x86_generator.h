@@ -5,16 +5,6 @@
 #include "opcode_generator.h"
 
 
-#define OPCODE_STORE_T_SHORT_PREFIX			0x66
-#define OPCODE_STORE_CHAR_OPCODE			0x88
-#define OPCODE_STORE_SHORT_INT_OPCODE       0x89
-
-#define OPCODE_IMUL_HIGH_BYTE  				0x0f
-#define OPCODE_IMUL_LOW_BYTE   				0xaf
-#define OPCODE_CDQ             				0x99
-#define OPCODE_IDIV            				0xf7
-
-
 extern std::vector<Operand> operand_stack;
 extern std::vector<Operand>::iterator operand_stack_top ;
 extern std::vector<Operand>::iterator operand_stack_last_top ;
@@ -34,9 +24,6 @@ extern  Section *sec_text,			// ´úÂë½Ú
 void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c);
 void load(int r, Operand * opd);
 void store(int r, Operand * opd);
-int load_one(int rc, Operand * opd);
-void load_two(int rc1, int rc2);
-void store_zero_to_one();
 void gen_op(int op);
 void gen_opInteger(int op);
 void gen_opTwoInteger(int opc, int op);

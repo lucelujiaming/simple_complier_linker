@@ -38,6 +38,8 @@ typedef struct TkWord
 } TkWord;
 
 /* 寄存器编码 */
+// 这个的取值是写死的。参见书上的表8.4。
+// 也就是Intel白皮书的第二卷的第二章的Table 2-2。
 enum e_Register
 {
     REG_EAX = 0,

@@ -16,7 +16,7 @@ enum e_SynTaxState
 /* 存储类型 */
 enum e_StorageClass
 {
-	SC_GLOBAL =   0x00f0,		// 包括：包括整型常量，字符常量、字符串常量,全局变量,函数定义          
+	SC_GLOBAL =   0x00f0,		// 包括：包括整型常量，字符常量、字符串常量,全局变量,函数定义
 	SC_LOCAL  =   0x00f1,		// 栈中变量
 	SC_LLOCAL =   0x00f2,       // 寄存器溢出存放栈中
 	SC_CMP    =   0x00f3,       // 使用标志寄存器
