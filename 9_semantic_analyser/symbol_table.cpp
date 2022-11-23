@@ -17,9 +17,11 @@ std::vector<Symbol> local_sym_stack;   //局部符号栈
 extern std::vector<TkWord> tktable;
 extern int token_type;
 
-extern Type char_pointer_type,		// 字符串指针
-			 int_type,				// int类型
-			 default_func_type;		// 缺省函数类型
+Type char_pointer_type,		// 字符串指针
+	 int_type,				// int类型
+	 default_func_type;		// 缺省函数类型
+
+Symbol *sym_sec_rdata;			// 只读节符号
 
 /***********************************************************
  *  功能：将符号放在符号栈中

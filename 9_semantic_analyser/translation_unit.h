@@ -50,4 +50,6 @@ enum e_TypeCode
 int type_size(Type * type, int * align);
 int calc_align(int n , int align);
 void mk_pointer(Type *t);
+Type *pointed_type(Type *t);
+int pointed_size(Type *t);
 #endif

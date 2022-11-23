@@ -6,10 +6,12 @@
 #include<stdlib.h>
 #include "get_token.h"
 #include "x86_generator.h"
+#include "reg_manager.h"
 
-extern int loc;
 e_SynTaxState syntax_state = SNTX_NUL;
 int syntax_level;
+
+int return_symbol_pos;			// 记录return指令位置
 
 extern Section *sec_text,	// 代码节
 		*sec_data,			// 数据节
@@ -20,11 +22,8 @@ extern Section *sec_text,	// 代码节
 		*sec_symtab,		// 符号表节	
 		*sec_dynsymtab;		// 链接库符号节
 
-extern int return_symbol_pos;			// 记录return指令位置
 extern int sec_text_opcode_ind ;	 	// 指令在代码节位置
-extern int loc ;						// 局部变量在栈中位置
-extern int func_begin_ind;				// 函数开始指令
-extern int func_ret_sub;				// 函数返回释放栈空间大小
+extern int function_stack_loc ;			// 局部变量在栈中位置
 extern Symbol *sym_sec_rdata;			// 只读节符号
 
 extern std::vector<Operand> operand_stack;
@@ -216,11 +215,15 @@ void direct_declarator_postfix(Type * type, int func_call)
 {
 	int n;
 	Symbol * s;
-	if(get_current_token_type() == TK_OPENPA)         // <TK_OPENPA><parameter_type_list><TK_CLOSEPA> | <TK_OPENPA><TK_CLOSEPA>
+	// <TK_OPENPA><parameter_type_list><TK_CLOSEPA> | <TK_OPENPA><TK_CLOSEPA>
+	// Such as : var(), var(int a, int b)
+	if(get_current_token_type() == TK_OPENPA)         
 	{
 		parameter_type_list(type, func_call);
 	}
-	else if(get_current_token_type() == TK_OPENBR)   // <TK_OPENBR><TK_CINT><TK_CLOSEBR> | <TK_OPENBR><TK_CLOSEBR>
+	// <TK_OPENBR><TK_CINT><TK_CLOSEBR> | <TK_OPENBR><TK_CLOSEBR>
+	// Such as : var[5], var[] 
+	else if(get_current_token_type() == TK_OPENBR)   
 	{
 		get_token();
 		n = -1;
@@ -232,16 +235,18 @@ void direct_declarator_postfix(Type * type, int func_call)
 		}
 		else
 		{
-			print_error("Need intergat\n");
+			print_error("Need inter\n");
 		}
 		skip_token(TK_CLOSEBR);
 		direct_declarator_postfix(type, func_call);    // Nesting calling
+		// 把数组大小保存到符号表中，作为一个匿名符号。
 		s = sym_push(SC_ANOM, type, 0, n);
 		type->type = T_ARRAY | T_PTR;
 		type->ref = s;
 	}
 }
 
+/**************************************************************************/
 /*  功能：解析形参类型表                                                  */
 /*  func_call：函数调用约定                                               */
 /*                                                                        */
@@ -256,6 +261,7 @@ void direct_declarator_postfix(Type * type, int func_call)
 /*  等价转换后文法：                                                      */
 /*  <parameter_type_list>::=<type_specifier>{<declarator>}                */
 /*   {<TK_COMMA><type_specifier>{<declarator>} } <TK_COMMA><TK_ELLIPSIS>  */
+/**************************************************************************/
 void parameter_type_list(Type * type, int func_call) // (int func_call)
 {
 	int n;
@@ -1335,6 +1341,26 @@ int type_size(Type * typeCal, int * align)
 	}
 }
 
+/***********************************************************
+ * 功能:	返回t所指向的数据类型
+ * t:		指针类型
+ **********************************************************/
+Type *pointed_type(Type *t)
+{
+    return &t->ref->typeSymbol;
+}
+
+/***********************************************************
+ * 功能:	返回t所指向的数据类型尺寸
+ * t:		指针类型
+ **********************************************************/
+int pointed_size(Type *t)
+{
+    int align;
+    return type_size(pointed_type(t), &align);
+}
+
+
 /************************************************************************/
 /*  <postfix_expression> ::= <primary_expression>                       */
 /*    { <TK_OPENBR><expression><TK_CLOSEBR>                             */
@@ -1408,10 +1434,15 @@ void postfix_expression()
 			{
 				print_error("Not found");
 			}
+            /* 成员变量地址 = 结构变量指针 + 成员变量偏移 */
+			/* 成员变量的偏移是指相对于结构体首地址的字节偏移，
+			 * 因此为了计算字节偏移，此处变换类型为字节变量指针。 */
 			operand_stack_top->type = char_pointer_type;
 			operand_push(&int_type, SC_GLOBAL, symbol->related_value);
-			gen_op(TK_PLUS);
+			gen_op(TK_PLUS);  // 执行后optop->value记忆了成员地址
+            /* 变换类型为成员变量数据类型 */
 			operand_stack_top->type = symbol->typeSymbol;
+            /* 数组变量不能充当左值 */
 			if (!(operand_stack_top->type.type & T_ARRAY))
 			{
 				operand_stack_top->storage_class |= SC_LVAL;
@@ -1419,11 +1450,16 @@ void postfix_expression()
 
 			get_token();
 		}
+		// 如果是数组下标符号 - 左中括号"["。
 		else if (get_current_token_type() == TK_OPENBR)      // <TK_OPENBR><expression><TK_CLOSEBR>
 		{
+			// 获取数组下标的第一个token。
 			get_token();
+			// 计算数组下标。
 			expression();
+			// 计算数组偏移地址。
 			gen_op(TK_PLUS);
+			// 
 			indirection();
 			skip_token(TK_CLOSEBR);
 		}
@@ -1985,8 +2021,8 @@ Section * allocate_storage(Type * typeCurrent, int storage_class, int has_init, 
 	// 局部变量在栈中分配存储空间
 	if ((storage_class & SC_VALMASK) == SC_LOCAL)
 	{
-		loc = calc_align(loc - size, align);
-		*addr = loc;
+		function_stack_loc = calc_align(function_stack_loc - size, align);
+		*addr = function_stack_loc;
 	}
 	else
 	{
@@ -2027,7 +2063,7 @@ Section * allocate_storage(Type * typeCurrent, int storage_class, int has_init, 
 		if (token_code == 0)
 		{
 			operand_push(typeCurrent, SC_GLOBAL | SC_SYM, *addr);
-		//	operand_stack_top->sym = sec_rdata;
+		//	operand_stack_top->sym = sym_sec_rdata;
 		}
 	}
 	return sec;
