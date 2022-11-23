@@ -31,8 +31,8 @@ extern Type int_type;			// int类型
 /* 因为一些Opcode并不是完整的Opcode码，它需要ModR/M字节进行辅助。       */
 /* mod：       Mod R/M[7：6]                                            */
 /*             与R/M一起组成32种可能的值一8个寄存器加24种寻址模式       */
-/* reg_opcode：ModR/M[5：3]指令的另外3位操作码源操作数(叫法不准确)      */
-/*             要么指定一个寄存器的值，                                 */
+/* reg_opcode：ModR/M[5：3] 源操作数(叫法不准确)                        */
+/*             作为指令的另外3位操作码，要么指定一个寄存器的值，        */
 /*             要么指定Opcode中额外的3个比特的信息，                    */
 /*             具体作用在主操作码中指定。                               */
 /* r_m：       Mod R/M[2：0] 目标操作数(叫法不准确)                     */
@@ -290,13 +290,14 @@ void store(int r, Operand * opd)
 }
 
 /************************************************************************/
-/* 功能：生成整数运算                                                   */
-/* OP：运算符类型                                                       */
+/* 功能：生成整数运算。该函数被gen_op调用。                             */
+/* op：运算符类型。输入类型为e_TokenCode。包括关系运算和数学运算。      */
 /************************************************************************/
 void gen_opInteger(int op)
 {
-	int storage_class, fr, opc;
+	int dst_storage_class, src_storage_class, opc;
 	switch(op) {
+	// 数学运算。
 	case TK_PLUS:
 		opc = 0;
 		gen_opTwoInteger(opc, op);
@@ -314,35 +315,36 @@ void gen_opInteger(int op)
 		// 可以看到乘法操作分为三步。就是获得乘数，获得被乘数，执行IMUL完成乘法。
 		// 获得乘数，获得被乘数。
 		load_two(REG_ANY, REG_ANY);
-		storage_class  = operand_stack_last_top->storage_class;
-		fr = operand_stack_top->storage_class;
+		dst_storage_class  = operand_stack_last_top->storage_class;
+		src_storage_class = operand_stack_top->storage_class;
 		operand_pop();
 		// 执行IMUL完成乘法。
 		gen_opcodeTwo(OPCODE_IMUL_HIGH_BYTE, OPCODE_IMUL_LOW_BYTE);
 		// 生成IMUL需要的指令寻址方式。
-		gen_modrm(ADDR_REG, storage_class, fr, NULL, 0);
+		gen_modrm(ADDR_REG, dst_storage_class, src_storage_class, NULL, 0);
 		break;
 	case TK_DIVIDE:
 	case TK_MOD:
 		opc = 7;
 		load_two(REG_EAX, REG_ECX);
-		storage_class  = operand_stack_last_top->storage_class;
-		fr = operand_stack_top->storage_class;
+		dst_storage_class  = operand_stack_last_top->storage_class;
+		src_storage_class = operand_stack_top->storage_class;
 		operand_pop();
 		spill_reg(REG_EDX);
 		gen_opcodeOne(OPCODE_CDQ);
 		gen_opcodeOne(OPCODE_IDIV);
-		gen_modrm(ADDR_REG, opc, fr, NULL, 0);
+		gen_modrm(ADDR_REG, opc, src_storage_class, NULL, 0);
 		if (op == TK_MOD)
 		{
-			storage_class = REG_EDX;
+			dst_storage_class = REG_EDX;
 		}
 		else
 		{
-			storage_class = REG_EAX;
+			dst_storage_class = REG_EAX;
 		}
-		operand_stack_top->storage_class = storage_class;
+		operand_stack_top->storage_class = dst_storage_class;
 		break;
+	// 关系运算。
 	default:
 		opc = 7;
 		gen_opTwoInteger(opc, op);
@@ -351,18 +353,19 @@ void gen_opInteger(int op)
 }
 
 /************************************************************************/
-/* 功能：生成整数二元运算                                               */
-/* opc：ModR/M[5：3]                                                    */
-/* op：运算符类型                                                       */
+/* 功能：生成整数二元运算。该函数被gen_opInteger调用。                  */
+/*       只处理加法，减法和关系操作。                                   */
+/* opc： ModR/M[5：3]                                                   */
+/* op：  运算符类型。输入类型为e_TokenCode。只包括加法，减法和关系运算。*/
 /************************************************************************/
 void gen_opTwoInteger(int opc, int op)
 {
-	int last_storage_class, storage_class, c;
+	int dst_storage_class, src_storage_class, c;
 	// 如果栈顶元素不是符号，也就不是全局变量和函数定义，
 	// 而且如果也不是栈中变量。那就只能是常量。
 	if ((operand_stack_top->storage_class & (SC_VALMASK | SC_LOCAL | SC_SYM)) == SC_GLOBAL)
 	{
-		last_storage_class = load_one(REG_ANY, operand_stack_last_top);
+		dst_storage_class = load_one(REG_ANY, operand_stack_last_top);
 		c = operand_stack_top->value;
 		if (c == (char)c)
 		{
@@ -371,7 +374,7 @@ void gen_opTwoInteger(int opc, int op)
 			// SUB--Subtract				83 /5 ib	SUB r/m32,imm8	Subtract sign-extended imm8 to r/m32
 			// CMP--Compare Two Operands	83 /7 ib	CMP r/m32,imm8	Compare imm8 with r/m32
 			gen_opcodeOne(0x83);
-			gen_modrm(ADDR_REG, opc, last_storage_class, NULL, 0);
+			gen_modrm(ADDR_REG, opc, dst_storage_class, NULL, 0);
 			gen_byte(c);
 		}
 		else
@@ -380,18 +383,21 @@ void gen_opTwoInteger(int opc, int op)
 			// SUB--Subtract				81 /5 id	SUB r/m32,imm32	Subtract sign-extended imm32 from r/m32
 			// CMP--Compare Two Operands	81 /7 id	CMP r/m32,imm32	Compare imm32 with r/m32
 			gen_opcodeOne(0x81);
-			gen_modrm(ADDR_REG, opc, last_storage_class, NULL, 0);
+			gen_modrm(ADDR_REG, opc, dst_storage_class, NULL, 0);
 			gen_byte(c);
 		}
 	}
 	else
 	{
 		load_two(REG_ANY, REG_ANY);
-		last_storage_class  = operand_stack_last_top->storage_class;
-		storage_class       = operand_stack_top->storage_class;
+		dst_storage_class  = operand_stack_last_top->storage_class;
+		src_storage_class  = operand_stack_top->storage_class;
+		// 
 		gen_opcodeOne((opc << 3) | 0x01);
-		gen_modrm(ADDR_REG, storage_class, last_storage_class, NULL, 0);
+		// 根据操作数存储类型和目标操作数存储类型生成指令寻址方式字节。
+		gen_modrm(ADDR_REG, src_storage_class, dst_storage_class, NULL, 0);
 	}
+	// 计算完成。弹出栈顶元素。
 	operand_pop();
 	if (op >= TK_EQ && op <= TK_GEQ)   // >,<,>=.<=...
 	{
