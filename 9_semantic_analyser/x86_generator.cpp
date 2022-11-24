@@ -44,16 +44,18 @@ extern Type int_type;			// int类型
 /* sym：       符号指针                                                 */
 /* c：         符号关联值                                               */
 /************************************************************************/
-/* 阅读这个函数需要仔细研究表8.4。整个函数分为四种情况：                */
-/*  1. mod == 0xC0说明是寄存器寻址。参见表8.4的后8行。                  */
+/* 阅读这个函数需要仔细研究书上的表8.4。或者查看Intel白皮书509页的      */
+/*     Table 2-1. 16-Bit Addressing Forms with the ModR/M Byte          */
+/* 整个函数分为四种情况：                                               */
+/*  1. mod == 0xC0说明是寄存器寻址。参见书上的表8.4的后8行。            */
 /*  2. 全局变量是一个由内存偏移量指定的内存地址。是寄存器间接寻址。     */
 /*     就是disp32，也就是mod = 00，R/M = 101。等于0x05。                */
-/*     参见表8.4的disp32行。                                            */
+/*     参见书上的表8.4的disp32行。                                      */
 /*  3. 局部变量在栈上，地址使用EBP寻址。                                */
 /*     如果是8位寻址就是disp 8[EBP]，也就是mod = 01，R/M = 101。        */
-/*     等于0x45。参见表8.4的disp 8[EBP]行。                             */
+/*     等于0x45。参见书上的表8.4的disp 8[EBP]行。                       */
 /*     如果是32位寻址就是disp 32[EBP]，也就是mod = 10，R/M = 101。      */
-/*     等于0x85。参见表8.4的disp 32[EBP]行。                            */
+/*     等于0x85。参见书上的表8.4的disp 32[EBP]行。                      */
 /*  4. 如果上面的情况都不是，说明是寄存器间接寻址。也就是表格的前八行。 */
 /*     也就是mod = 10。R/M使用参数的值。                                */
 /************************************************************************/
@@ -64,7 +66,7 @@ void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c)
 	// 生成reg_opcode：ModR/M[5：3]
 	reg_opcode <<= MODRM_REG_OPCODE_OFFSET; // 3;
 
-	// 1.  mod == 0xC0说明是寄存器寻址。参见表8.4的后8行。
+	// 1.  mod == 0xC0说明是寄存器寻址。参见书上的表8.4的后8行。
 	// mod=11 寄存器寻址 89 E5(11 reg_opcode=100ESP r=101EBP) MOV EBP,ESP
 	// 0xC0转成二进制就是1100 0000
 	if (mod == MODRM_EFFECTIVE_ADDRESS_REG) // 0xC0
@@ -119,7 +121,7 @@ void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c)
 	else 
 	{
 		// mod=00 89 01(00 reg_opcode=000 EAX r=001ECX) MOV DWORD PTR DS:[ECX],EAX
-		gen_byte(MODRM_EFFECTIVE_ADDRESS_REG_ADDRESS_MOD // 0x00
+		gen_byte(MODRM_EFFECTIVE_ADDRESS_REG_ADD_MOD // 0x00
 			| reg_opcode | (r_m & SC_VALMASK));
 	}
 }
@@ -295,16 +297,23 @@ void store(int r, Operand * opd)
 /************************************************************************/
 void gen_opInteger(int op)
 {
-	int dst_storage_class, src_storage_class, opc;
+	int dst_storage_class, src_storage_class;
+	int reg_code = REG_ANY;  // Set error code as default value
 	switch(op) {
 	// 数学运算。
 	case TK_PLUS:
-		opc = 0;
-		gen_opTwoInteger(opc, op);
+		// 查看Intel白皮书2517页的One-byte Opcode Map表。
+		// 可以看到ADD的取值为0x00 ~ 0x05。
+		// 这里取高5位。也就是除以8。为0。
+		reg_code = ONE_BYTE_OPCODE_ADD_GIGH_FIVE_BYTES;
+		gen_opTwoInteger(reg_code, op);
 		break;
 	case TK_MINUS:
-		opc = 5;
-		gen_opTwoInteger(opc, op);
+		// 查看Intel白皮书2517页的One-byte Opcode Map表。
+		// 可以看到ADD的取值为0x28 ~ 0x2D。
+		// 这里取高5位。也就是除以8。为5。
+		reg_code = ONE_BYTE_OPCODE_SUB_GIGH_FIVE_BYTES;
+		gen_opTwoInteger(reg_code, op);
 		break;
 	case TK_STAR:
 		/* 一条形如 c = a * b; 的语句包括如下的指令。                           */
@@ -325,15 +334,39 @@ void gen_opInteger(int op)
 		break;
 	case TK_DIVIDE:
 	case TK_MOD:
-		opc = 7;
+		reg_code = REG_EDI; // 7;
+		// 因为IDIV ECX会导致EAX除以ECX。
+		// 把除数和被除数加载到EAX和ECX中。
 		load_two(REG_EAX, REG_ECX);
 		dst_storage_class  = operand_stack_last_top->storage_class;
 		src_storage_class = operand_stack_top->storage_class;
 		operand_pop();
+		// 因为IDIV ECX的结果中，商放在EAX，余数在EDX。
+		// 因此上，这里需要预留REG_EDX。
 		spill_reg(REG_EDX);
+
+		// CWD/CDQ--Convert Word to Doubleword/Convert Doubleword to Qradword
+		// 99	CWQ	EDX:EAX<--sign_entended EAX
 		gen_opcodeOne(OPCODE_CDQ);
+
+		/* 一条形如 IDIV ECX  对应的机器码为：F7F9。下面先写第一个字符F7        */
+		/************************************************************************/
+		/* 指令参见Intel白皮书1015页。使用IDIV r/m32，也就是F7。解释如下：      */
+		/*  Signed divide EDX:EAX by r/m32, with result                         */
+		/*  stored in EAX <- Quotient, EDX <- Remainder.                        */
+		/************************************************************************/
+		/* IDIV--Signed Divide                                                  */
+		/* F7 /7	IDIV r/m32	Signed divide EDX:EAX                           */
+		/* (where EDX must contain signed extension of EAX)                     */
+		/* by r/m doubleword.(Result:EAX=Quotient, EDX=Remainder)               */
+		/* EDX:EAX被除数 r/m32除数                                              */
+		/************************************************************************/
 		gen_opcodeOne(OPCODE_IDIV);
-		gen_modrm(ADDR_REG, opc, src_storage_class, NULL, 0);
+		/* 写第二个字符F9                                                       */
+		/* 我们在Intel白皮书509页的Table 2-1.中查找F9。可以发现：               */
+		/*     因为我们是直接使用ECX。因此上Mod=0b11也就是3，R/M为001           */
+		/*     而reg_code = 0b111，也就是REG_EDI。                              */
+		gen_modrm(ADDR_REG, reg_code, src_storage_class, NULL, 0);
 		if (op == TK_MOD)
 		{
 			dst_storage_class = REG_EDX;
@@ -346,17 +379,21 @@ void gen_opInteger(int op)
 		break;
 	// 关系运算。
 	default:
-		opc = 7;
-		gen_opTwoInteger(opc, op);
+		// 查看Intel白皮书2517页的One-byte Opcode Map表。
+		// 可以看到ADD的取值为0x38 ~ 0x3D。
+		// 这里取高5位。也就是除以8。为7。
+		reg_code = ONE_BYTE_OPCODE_CMP_GIGH_FIVE_BYTES;
+		gen_opTwoInteger(reg_code, op);
 		break;
 	}
 }
 
 /************************************************************************/
-/* 功能：生成整数二元运算。该函数被gen_opInteger调用。                  */
-/*       只处理加法，减法和关系操作。                                   */
-/* opc： ModR/M[5：3]                                                   */
-/* op：  运算符类型。输入类型为e_TokenCode。只包括加法，减法和关系运算。*/
+/* 功能：     生成整数二元运算。该函数被gen_opInteger调用。             */
+/*            只处理加法，减法和关系操作。                              */
+/* reg_code： ModR/M[5：3]                                              */
+/* op：       运算符类型。输入类型为e_TokenCode。                       */
+/*            只包括加法，减法和关系运算。                              */
 /************************************************************************/
 /* 这个0x83的解释如下：                                                 */
 /* 参考Add/Cmp/Sub的命令格式在Intel白皮书604/726/1776页可以发现：       */
@@ -382,7 +419,7 @@ void gen_opInteger(int op)
 /*     操作数中含有Ev符号，那么紧跟后面的一个字节就是MODR/M，           */
 /*     通过拆分ModR/M得到ModR/M[5：3]就可以推断出指令。                 */
 /************************************************************************/
-void gen_opTwoInteger(int opc, int op)
+void gen_opTwoInteger(int reg_code, int op)
 {
 	int dst_storage_class, src_storage_class, c;
 	// 如果栈顶元素不是符号，也就不是全局变量和函数定义，
@@ -399,9 +436,9 @@ void gen_opTwoInteger(int opc, int op)
 			// SUB--Subtract				83 /5 ib	SUB r/m32,imm8	Subtract sign-extended imm8 to r/m32
 			// CMP--Compare Two Operands	83 /7 ib	CMP r/m32,imm8	Compare imm8 with r/m32
 			// 不管是加减法还是比较操作，只要是第一个字节都是0x83。
-			gen_opcodeOne(0x83);
+			gen_opcodeOne(ONE_BYTE_OPCODE_IMME_GRP_TO_IMM8); // (0x83);
 			// 只有第二个字节不同。
-			gen_modrm(ADDR_REG, opc, dst_storage_class, NULL, 0);
+			gen_modrm(ADDR_REG, reg_code, dst_storage_class, NULL, 0);
 			// 最后跟上立即数就好了。
 			gen_byte(c);
 		}
@@ -411,14 +448,16 @@ void gen_opTwoInteger(int opc, int op)
 			// ADD--Add					    81 /0 id	ADD r/m32,imm32	Add sign-extended imm32 to r/m32
 			// SUB--Subtract				81 /5 id	SUB r/m32,imm32	Subtract sign-extended imm32 from r/m32
 			// CMP--Compare Two Operands	81 /7 id	CMP r/m32,imm32	Compare imm32 with r/m32
-			gen_opcodeOne(0x81);
-			gen_modrm(ADDR_REG, opc, dst_storage_class, NULL, 0);
+			gen_opcodeOne(ONE_BYTE_OPCODE_IMME_GRP_TO_IMM32); //(0x81);
+			gen_modrm(ADDR_REG, reg_code, dst_storage_class, NULL, 0);
 			gen_byte(c);
 		}
 	}
 	// 如果栈顶元素不是常量，第一个字节就和opc有关系了。
 	else
 	{
+		// More clear
+		int one_byte_opcode = reg_code;
 		load_two(REG_ANY, REG_ANY);
 		dst_storage_class  = operand_stack_last_top->storage_class;
 		src_storage_class  = operand_stack_top->storage_class;
@@ -426,7 +465,7 @@ void gen_opTwoInteger(int opc, int op)
 		// 因此上，计算结果就是：加法时为0x01。减法时为0x29。比较时为0x39。
 		// 查看Intel白皮书2517页的One-byte Opcode Map表。
 		// 可以找到对应的指令，分别为ADD，SUB，CMP
-		gen_opcodeOne((opc << 3) | 0x01);
+		gen_opcodeOne((one_byte_opcode << 3) | 0x01);
 		// 根据操作数存储类型和目标操作数存储类型生成指令寻址方式字节。
 		gen_modrm(ADDR_REG, src_storage_class, dst_storage_class, NULL, 0);
 	}

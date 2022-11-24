@@ -58,6 +58,7 @@ enum e_Register
 enum e_AddrForm
 {
 	ADDR_OTHER,
+	/* 这个值来自于书上的表8.4。或者查看Intel白皮书509页的后8行。     */
 	ADDR_REG = 3
 };
 
