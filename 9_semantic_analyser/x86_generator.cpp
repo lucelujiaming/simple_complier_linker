@@ -358,6 +358,30 @@ void gen_opInteger(int op)
 /* opc： ModR/M[5：3]                                                   */
 /* op：  运算符类型。输入类型为e_TokenCode。只包括加法，减法和关系运算。*/
 /************************************************************************/
+/* 这个0x83的解释如下：                                                 */
+/* 参考Add/Cmp/Sub的命令格式在Intel白皮书604/726/1776页可以发现：       */
+/*     0x83表示是"Add sign-extended imm8 to r/m32."。                   */
+/*     0x83表示是"Compare imm8 with r/m32."。                           */
+/*     0x83表示是"Subtract sign-extended imm8 from r/m32."。            */
+/* 这个0x83的解释过程如下：                                             */
+/*     首先查看Intel白皮书2517页的One-byte Opcode Map表。               */
+/*     查出来是Immediate Grp 1，格式是Ev,lb。说明这个包含了多条指令。   */
+/*     要根据后面的一个字节的ModR/M确定相应的指令                       */
+/*     操作数中含有Ev符号，那么紧跟后面的一个字节就是MODR/M，           */
+/*     通过拆分ModR/M得到ModR/M[5：3]就可以推断出指令。                 */
+/************************************************************************/
+/* 这个0x81的解释如下：                                                 */
+/* 参考Add/Cmp/Sub的命令格式在Intel白皮书604/726/1776页可以发现：       */
+/*     0x81表示是"Add imm32 to r/m32."。                                */
+/*     0x81表示是"Compare imm32 with r/m32."。                          */
+/*     0x81表示是"Subtract imm32 from r/m32."。                         */
+/* 这个0x81的解释过程如下：                                             */
+/*     首先查看Intel白皮书2517页的One-byte Opcode Map表。               */
+/*     查出来是Immediate Grp 1，格式是Ev,lz。说明这个包含了多条指令。   */
+/*     要根据后面的一个字节的ModR/M确定相应的指令                       */
+/*     操作数中含有Ev符号，那么紧跟后面的一个字节就是MODR/M，           */
+/*     通过拆分ModR/M得到ModR/M[5：3]就可以推断出指令。                 */
+/************************************************************************/
 void gen_opTwoInteger(int opc, int op)
 {
 	int dst_storage_class, src_storage_class, c;
@@ -366,6 +390,7 @@ void gen_opTwoInteger(int opc, int op)
 	if ((operand_stack_top->storage_class & (SC_VALMASK | SC_LOCAL | SC_SYM)) == SC_GLOBAL)
 	{
 		dst_storage_class = load_one(REG_ANY, operand_stack_last_top);
+		// 如果c是一个8位立即数。
 		c = operand_stack_top->value;
 		if (c == (char)c)
 		{
@@ -373,10 +398,14 @@ void gen_opTwoInteger(int opc, int op)
 			// ADD--Add						83 /0 ib	ADD r/m32,imm8	Add sign-extended imm8 from r/m32
 			// SUB--Subtract				83 /5 ib	SUB r/m32,imm8	Subtract sign-extended imm8 to r/m32
 			// CMP--Compare Two Operands	83 /7 ib	CMP r/m32,imm8	Compare imm8 with r/m32
+			// 不管是加减法还是比较操作，只要是第一个字节都是0x83。
 			gen_opcodeOne(0x83);
+			// 只有第二个字节不同。
 			gen_modrm(ADDR_REG, opc, dst_storage_class, NULL, 0);
+			// 最后跟上立即数就好了。
 			gen_byte(c);
 		}
+		// 否则就是32位的立即数。
 		else
 		{
 			// ADD--Add					    81 /0 id	ADD r/m32,imm32	Add sign-extended imm32 to r/m32
@@ -387,18 +416,24 @@ void gen_opTwoInteger(int opc, int op)
 			gen_byte(c);
 		}
 	}
+	// 如果栈顶元素不是常量，第一个字节就和opc有关系了。
 	else
 	{
 		load_two(REG_ANY, REG_ANY);
 		dst_storage_class  = operand_stack_last_top->storage_class;
 		src_storage_class  = operand_stack_top->storage_class;
-		// 
+		// 在这里加法时，opc是0。减法时，opc是5。比较时，opc是7。
+		// 因此上，计算结果就是：加法时为0x01。减法时为0x29。比较时为0x39。
+		// 查看Intel白皮书2517页的One-byte Opcode Map表。
+		// 可以找到对应的指令，分别为ADD，SUB，CMP
 		gen_opcodeOne((opc << 3) | 0x01);
 		// 根据操作数存储类型和目标操作数存储类型生成指令寻址方式字节。
 		gen_modrm(ADDR_REG, src_storage_class, dst_storage_class, NULL, 0);
 	}
 	// 计算完成。弹出栈顶元素。
 	operand_pop();
+	// CMP影响位在Intel白皮书417页。
+	// 也就是Table B-1. EFLAGS Condition Codes
 	if (op >= TK_EQ && op <= TK_GEQ)   // >,<,>=.<=...
 	{
 		operand_stack_top->storage_class = SC_CMP;

@@ -102,6 +102,19 @@ SOURCE=.\get_token.cpp
 # End Source File
 # Begin Source File
 
+SOURCE=.\instruction_operator.cpp
+
+!IF  "$(CFG)" == "semantic_analyser - Win32 Release"
+
+!ELSEIF  "$(CFG)" == "semantic_analyser - Win32 Debug"
+
+# SUBTRACT CPP /YX /Yc /Yu
+
+!ENDIF 
+
+# End Source File
+# Begin Source File
+
 SOURCE=.\opcode_generator.cpp
 
 !IF  "$(CFG)" == "semantic_analyser - Win32 Release"
@@ -116,6 +129,19 @@ SOURCE=.\opcode_generator.cpp
 # Begin Source File
 
 SOURCE=.\operand_stack.cpp
+
+!IF  "$(CFG)" == "semantic_analyser - Win32 Release"
+
+!ELSEIF  "$(CFG)" == "semantic_analyser - Win32 Debug"
+
+# SUBTRACT CPP /YX /Yc /Yu
+
+!ENDIF 
+
+# End Source File
+# Begin Source File
+
+SOURCE=.\reg_manager.cpp
 
 !IF  "$(CFG)" == "semantic_analyser - Win32 Release"
 
@@ -170,11 +196,19 @@ SOURCE=.\get_token.h
 # End Source File
 # Begin Source File
 
+SOURCE=.\instruction_operator.h
+# End Source File
+# Begin Source File
+
 SOURCE=.\opcode_generator.h
 # End Source File
 # Begin Source File
 
 SOURCE=.\operand_stack.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\reg_manager.h
 # End Source File
 # Begin Source File
 
@@ -195,6 +229,10 @@ SOURCE=.\translation_unit.h
 # Begin Source File
 
 SOURCE=.\x86_generator.h
+# End Source File
+# Begin Source File
+
+SOURCE=.\x86_opcode_define.h
 # End Source File
 # End Group
 # Begin Group "Resource Files"
