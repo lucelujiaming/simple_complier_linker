@@ -1468,6 +1468,8 @@ void primary_expression()
 		break;
 	case TK_CSTR:
 		// get_token();
+		// 整个操作分为三步：
+		//   1.1. 生成一个字符串指针符号。
 		token_type = T_CHAR;
 		typeExpression.type = token_type;
 		mk_pointer(&typeExpression);
@@ -1478,9 +1480,19 @@ void primary_expression()
 		// var_sym_put(&typeExpression, SC_GLOBAL, 0, addr);
 
 		// 字符串常量不应该是0 - TK_PLUS。而应该是TK_CSTR
+		// 1.2. 调用allocate_storage分配空间。
+		//      因为，typeExpression->ref->related_value = -1
+		//      因此，会使用当前token计算数据长度。
         sec = allocate_storage(&typeExpression, 
         	SC_GLOBAL, SEC_RDATA_STORAGE, TK_CSTR, &addr);
+		// 1.3. 调用var_sym_put把变量放入符号表。
 		var_sym_put(&typeExpression, SC_GLOBAL, TK_CSTR, addr);
+		// 1.4. 嵌套调用initializer完成变量初始化。
+		//      因为前面分配空间的时候，是分配的全局空间，即SC_GLOBAL。
+	    //      同时，allocate_storage的返回值sec不是空。
+	    //      同时我们强制指定了T_ARRAY类型标志。
+		//      我们会进入initializer函数的if部分。
+	    //      把字符串memcpy到节的指定位置。
 		initializer(&typeExpression, addr, sec);
 		break;
 	case TK_OPENPA:
@@ -1785,25 +1797,28 @@ void external_declaration(e_StorageClass iSaveType)
 	Symbol * sym;
 	Section * sec = NULL;
 	print_all_stack("Starting external_declaration");
+	// 1. 读取声明的类型。这里的类型是第一个token。
+	//    这个类型可以理解为基础类型，因为如果后面跟了*就会变成指针类型。
 	if (!type_specifier(&bTypeCurrent))
 	{
 		print_error("Need type token\n");
 	}
-	// 因此上，如果前面type_specifier有处理结构体，这时bTypeCurrent.t就会等于T_STRUCT。
-	// 这说明这一次，我们处理完了一个外部声明。我们就返回。
+	// 2. 如果前面type_specifier有处理结构体，这时bTypeCurrent.t就会等于T_STRUCT。
+	//    这说明这一次，我们处理完了一个外部声明。我们就返回。
 	if (bTypeCurrent.type == T_STRUCT && get_current_token_type() == TK_SEMICOLON)
 	{
 		print_all_stack("End external_declaration");
 		get_token();
 		return;
 	}
-	// 代码执行到这里，说明我们已经处理完成了所有的结构体声明。
-	// 下面处理混合排列的函数声明，函数定义和全局变量声明。
+	// 2. 代码执行到这里，说明我们已经处理完成了所有的结构体声明。
+	//    下面处理混合排列的函数声明，函数定义和全局变量声明。
 	while (1)
 	{
 		typeCurrent = bTypeCurrent;
+		// 3. 处理声明前缀。如果发现*，typeCurrent就会变成指针类型。
 		declarator(&typeCurrent, &token_code, NULL);
-		// 函数定义
+		// 4. 如果是函数定义
 		if (get_current_token_type() == TK_BEGIN)
 		{
 			// 函数不能是本地的。只能是全局的。
@@ -1816,7 +1831,7 @@ void external_declaration(e_StorageClass iSaveType)
 			{
 				print_error("Needing function defination\n");
 			}
-			// 如果查找到了这个符号。说明前面进行了函数定义。
+			// 5. 如果查找到了这个符号。说明前面进行了函数定义。
 			sym = sym_search(token_code);
 			if(sym)
 			{
@@ -1829,7 +1844,7 @@ void external_declaration(e_StorageClass iSaveType)
 				}
 				sym->typeSymbol = typeCurrent;
 			}
-			// 如果没有找到，就直接添加。
+			// 6. 如果没有找到，就直接添加。
 			else
 			{
 				sym = func_sym_push(token_code, &typeCurrent);
@@ -1837,12 +1852,13 @@ void external_declaration(e_StorageClass iSaveType)
 			// 全局普通符号。
 			sym->storage_class = SC_SYM | SC_GLOBAL;
 			print_all_stack("Enter funtion body");
+			// 7. 处理函数体。
 			func_body(sym);
 			break;
 		}
 		else
 		{
-			// 函数声明
+			// 4. 函数声明
 			if((typeCurrent.type & T_BTYPE) == T_FUNC)
 			{
 				if (sym_search(token_code) == NULL)
@@ -1850,7 +1866,7 @@ void external_declaration(e_StorageClass iSaveType)
 					sym = sym_push(token_code, &typeCurrent, SC_GLOBAL | SC_SYM, 0);
 				}
 			}
-			// 变量声明
+			// 4. 变量声明
 			else
 			{
 			    storage_class = 0;
@@ -1874,6 +1890,7 @@ void external_declaration(e_StorageClass iSaveType)
 				//     if (get_current_token_type() == TK_ASSIGN)
 				// 但是这个判断用的太多了。于是这里提出来。
 				// 同时，这个判断是不受get_token影响的。
+				// 5. 如果是等号。说明是赋值操作。需要再读一个符号，把右值也读进来。
 				if(sec_area == SEC_DATA_STORAGE)
 				{
 					// 取得等号后面的右值。
@@ -1887,10 +1904,11 @@ void external_declaration(e_StorageClass iSaveType)
 				// 代码执行到这里的时候，如果存在赋值，我们已经取到了等号后面的右值。
 				// 之所以要这样做，是因为我们需要处理char str[]="abc"的情况，
 				// 通过allocate_storage求字符串长度。
-				// 首先为符号分配空间，
+
+				// 6. 首先为符号分配空间，
 			    sec = allocate_storage(&typeCurrent, storage_class,
 			    							sec_area, token_code, &addr);
-				// 之后添加符号。
+				// 7. 之后添加符号。
 				sym = var_sym_put(&typeCurrent, storage_class, token_code, addr);
 				//   (2) 将全局变量放人COFF符号表。
 			    if (iSaveType == SC_GLOBAL)
@@ -1901,6 +1919,7 @@ void external_declaration(e_StorageClass iSaveType)
 				//       如果上一个token是等号，使用当前token进行赋值。
 			    if (sec_area == SEC_DATA_STORAGE)  // int a = 5 ;
 			    {
+					// 8. 赋值操作。
 				    initializer(&typeCurrent, addr, sec);
 			    }
 			}

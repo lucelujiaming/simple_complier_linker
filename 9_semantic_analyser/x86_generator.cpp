@@ -822,5 +822,50 @@ void gen_call()
 	}
 }
 
+/************************************************************************/
+/* 一条形如 char str1[]  = "str1"; 的语句包括如下的指令。               */
+/*    MOV ECX,  5                                                       */
+/*    MOV ESI,  scc_anal.00403015; ASCII"strl"                          */
+/*    LEA EDI,  DWORD PTR SS: [EBP-9]                                   */
+/*    REP MOVS  BYTE PTR ES: [EDI], BYTE PTR DS: [ESI]                  */
+/* 对应的机器码如下：                                                   */
+/*    B9 05000000                                                       */
+/*    BE 15304000                                                       */
+/*    8D7D F7                                                           */
+/*    F3: A4                                                            */
+/************************************************************************/
+void array_initialize()
+{
+	// 空出REG_ECX作为赋值次数。
+	spill_reg(REG_ECX);
+
+	/*    MOV ECX,  5 对应的机器码如下：        */
+	/*    B9 05000000                           */
+	/* 参考MOV的命令格式在Intel白皮书1161页可以发现：       */
+	/*     0x0xB8表示是"Move imm32 to r32."。               */
+	gen_opcodeOne(OPCODE_MOVE_IMM32_TO_R32 + REG_ECX);
+	gen_dword(operand_stack_top->type.ref->related_value);
+	
+	/*    MOV ESI,  scc_anal.00403015; ASCII"strl"                          */
+	/*    BE 15304000                                                       */
+	gen_opcodeOne(OPCODE_MOVE_IMM32_TO_R32 + REG_ESI);
+	gen_addr32(operand_stack_top->storage_class, operand_stack_top->sym, operand_stack_top->value);
+	operand_swap();
+	
+	/*    LEA EDI,  DWORD PTR SS: [EBP-9] 对应的机器码如下：   */
+	/*    8D7D F7                                              */
+	/* 参考LEA的命令格式在Intel白皮书1101页可以发现：       */
+	/*     0xB8表示是"Store effective address for m in register r32."。               */
+	gen_opcodeOne(OPCODE_LEA_EFFECTIVE_ADDRESS_IN_R32);
+	gen_modrm(ADDR_OTHER, REG_EDI, SC_LOCAL, operand_stack_top->sym, operand_stack_top->value);
+	/* REP MOVS  BYTE PTR ES: [EDI], BYTE PTR DS: [ESI]对应的机器码如下：   */
+	/*    F3: A4                                                            */
+	/* 参考REP MOVS的命令格式在Intel白皮书1671页可以发现：       */
+	/*     F3 A4表示是"Move (E)CX bytes from DS:[(E)SI] to ES:[(E)DI]."。               */
+	gen_prefix((char)OPCODE_REP_PREFIX);
+	gen_opcodeOne((char)OPCODE_MOVE_ECX_BYTES_DS_ESI_TO_ES_EDI);
+	// 弹出ECX和ESI
+	operand_stack_top -= 2;
+}
 
 

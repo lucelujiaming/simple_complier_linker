@@ -29,6 +29,14 @@
 #define ONE_BYTE_OPCODE_IMME_GRP_TO_IMM8        0x83
 #define ONE_BYTE_OPCODE_IMME_GRP_TO_IMM32       0x81
 
+// 参见Intel白皮书1161页的MOV的命令格式。
+//     0xB8表示是"Move imm32 to r32."。
+#define OPCODE_MOVE_IMM32_TO_R32  				0xB8
+// 参见Intel白皮书1101页的LEA的命令格式。
+//     0x8D表示是"Store effective address for m in register r32."。
+#define OPCODE_LEA_EFFECTIVE_ADDRESS_IN_R32  	0x8D
 
+#define OPCODE_REP_PREFIX                       0xF3
+#define OPCODE_MOVE_ECX_BYTES_DS_ESI_TO_ES_EDI  0xA4
 
 #endif

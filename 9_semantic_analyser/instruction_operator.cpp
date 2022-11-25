@@ -218,20 +218,3 @@ void gen_op(int op)
 	}
 }
 
-void array_initialize()
-{
-	spill_reg(REG_ECX);
-
-	gen_opcodeOne(0xB8 + REG_ECX);
-	gen_dword(operand_stack_top->type.ref->related_value);
-	gen_opcodeOne(0xB8 + REG_ESI);
-	gen_addr32(operand_stack_top->storage_class, operand_stack_top->sym, operand_stack_top->value);
-	operand_swap();
-	
-	gen_opcodeOne(0x8D);
-	gen_modrm(ADDR_OTHER, REG_EDI, SC_LOCAL, operand_stack_top->sym, operand_stack_top->value);
-
-	gen_prefix((char)0xF3);
-	gen_opcodeOne((char)0xA4);
-	operand_stack_top -= 2;
-}
