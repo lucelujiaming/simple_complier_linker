@@ -47,9 +47,4 @@ enum e_TypeCode
 
 #define ALIGN_SET 0x100  // 强制对齐标志
 
-int type_size(Type * type, int * align);
-int calc_align(int n , int align);
-void mk_pointer(Type *t);
-Type *pointed_type(Type *t);
-int pointed_size(Type *t);
 #endif

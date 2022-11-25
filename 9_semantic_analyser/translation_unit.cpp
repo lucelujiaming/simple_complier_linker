@@ -5,7 +5,6 @@
 #include<stdio.h>
 #include<stdlib.h>
 #include "get_token.h"
-#include "x86_generator.h"
 #include "reg_manager.h"
 #include "instruction_operator.h"
 
@@ -59,8 +58,6 @@ void equality_expression();
 void relational_expression();
 
 void external_declaration(e_StorageClass iSaveType);
-
-int calc_align(int n , int align);
 
 Section * allocate_storage(Type * type, int r, int has_init, int v, int *addr);
 void init_variable(Type * type, Section * sec, int c); // , int v);
@@ -156,18 +153,6 @@ void struct_member_alignment(int * force_align) // (int *fc)
 	}
 	else
 		*force_align = 1; // Default is one.
-}
-
-/*********************************************************** 
- * 功能:	生成指针类型
- * t:		原数据类型
- **********************************************************/
-void mk_pointer(Type *t)
-{
-	Symbol *s;
-    s = sym_push(SC_ANOM, t, 0, -1);
-    t->type = T_PTR ;
-    t->ref = s;
 }
 
 /* <declarator> ::= {<TK_STAR>}[<function_calling_convention>]               */
@@ -473,24 +458,13 @@ void init_variable(Type * type, Section * sec, int c) // , int v)
 	// 如果节地址不为空，说明初始化的是放在栈上的局部变量。
 	else
 	{
+		// 如果左值是数组。那么就是数组初始化。例如：
+		//     char  str1[]  = "str 1";
 		if (type->type & T_ARRAY)
 		{
 			operand_push(type, SC_LOCAL | SC_LVAL, c);
 			operand_swap();
-			spill_reg(REG_ECX);
-
-			gen_opcodeOne(0xB8 + REG_ECX);
-			gen_dword(operand_stack_top->type.ref->related_value);
-			gen_opcodeOne(0xB8 + REG_ESI);
-			gen_addr32(operand_stack_top->storage_class, operand_stack_top->sym, operand_stack_top->value);
-			operand_swap();
-			
-			gen_opcodeOne(0x8D);
-			gen_modrm(ADDR_OTHER, REG_EDI, SC_LOCAL, operand_stack_top->sym, operand_stack_top->value);
-
-			gen_prefix((char)0xF3);
-			gen_opcodeOne((char)0xA4);
-			operand_stack_top -= 2;
+			array_initialize();
 		}
 		else
 		{
@@ -1278,7 +1252,6 @@ void unary_expression()
 	}
 }
 
-int type_size(Type * type, int * align);
 /***********************************************************
  *  <sizeof_expression> ::= 
  *     <KW_SIZEOF><TK_OPENPA><type_specifier><TK_CLOSEPA>
@@ -1298,69 +1271,6 @@ void sizeof_expression()
 		print_error("sizeof failed.");
 	operand_push(&int_type, SC_GLOBAL, size);
 }
-
-int type_size(Type * typeCal, int * align)
-{
-	Symbol *s;
-	int bt;
-	int PTR_SIZE = 4;
-	bt = typeCal->type & T_BTYPE;
-	switch(bt)
-	{
-	case T_STRUCT:
-		s = typeCal->ref;
-		*align = s->storage_class;
-		return s->related_value ;
-	case T_PTR:
-		// 如果是指针数组。这里分两种情况。
-		// 1. 一个是数组变量，类似于int AA[717]。
-		//    这种情况下，长度等于typeSymbol的大小乘以related_value，
-		//    例如int AA[717]的长度就是4 * 717 = 2868。
-		// 2. 一个是数组常量，类似于"Hello world!"这种字符串。
-        //    这种情况下，related_value等于-1。直接返回负数。由上层处理。
-		//    因为这种情况下，长度可以通过token直接计算。
-		if(typeCal->type & T_ARRAY)
-		{
-			s = typeCal->ref;
-			return type_size(&s->typeSymbol, align) * s->related_value;
-		}
-		// 否则指针的长度为32位，也就是4。
-		else
-		{
-			*align = PTR_SIZE;
-			return PTR_SIZE;
-		}
-	case T_INT:
-		*align = 4;
-		return 4 ;
-	case T_SHORT:
-		*align = 2;
-		return 2 ;
-	default:			// char, void, function
-		*align = 1;
-		return 1 ;
-	}
-}
-
-/***********************************************************
- * 功能:	返回t所指向的数据类型
- * t:		指针类型
- **********************************************************/
-Type *pointed_type(Type *t)
-{
-    return &t->ref->typeSymbol;
-}
-
-/***********************************************************
- * 功能:	返回t所指向的数据类型尺寸
- * t:		指针类型
- **********************************************************/
-int pointed_size(Type *t)
-{
-    int align;
-    return type_size(pointed_type(t), &align);
-}
-
 
 /************************************************************************/
 /*  <postfix_expression> ::= <primary_expression>                       */
@@ -1708,11 +1618,6 @@ void struct_member_declaration(int * maxalign, int * offset, Symbol *** ps)
 	}
 	syntax_state = SNTX_LF_HT;
 	skip_token(TK_SEMICOLON);
-}
-
-int calc_align(int n , int align)
-{
-	return (n + align -1) & (~(align -1));
 }
 
 /************************************************************************/

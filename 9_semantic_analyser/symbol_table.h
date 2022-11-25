@@ -76,5 +76,11 @@ Symbol * sec_sym_put(char * sec, int c);
 void print_all_stack(char* strPrompt);
 void mk_pointer(Type *t);
 
+int type_size(Type * type, int * align);
+int calc_align(int n , int align);
+
+Type *pointed_type(Type *t);
+int pointed_size(Type *t);
+
 void init();
 #endif

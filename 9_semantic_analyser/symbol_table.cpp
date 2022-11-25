@@ -248,6 +248,86 @@ Symbol * sym_search(int v)
 		return NULL;
 }
 
+// 
+int type_size(Type * typeCal, int * align)
+{
+	Symbol *s;
+	int bt;
+	int PTR_SIZE = 4;
+	bt = typeCal->type & T_BTYPE;
+	switch(bt)
+	{
+	case T_STRUCT:
+		s = typeCal->ref;
+		*align = s->storage_class;
+		return s->related_value ;
+	case T_PTR:
+		// 如果是指针数组。这里分两种情况。
+		// 1. 一个是数组变量，类似于int AA[717]。
+		//    这种情况下，长度等于typeSymbol的大小乘以related_value，
+		//    例如int AA[717]的长度就是4 * 717 = 2868。
+		// 2. 一个是数组常量，类似于"Hello world!"这种字符串。
+        //    这种情况下，related_value等于-1。直接返回负数。由上层处理。
+		//    因为这种情况下，长度可以通过token直接计算。
+		if(typeCal->type & T_ARRAY)
+		{
+			s = typeCal->ref;
+			return type_size(&s->typeSymbol, align) * s->related_value;
+		}
+		// 否则指针的长度为32位，也就是4。
+		else
+		{
+			*align = PTR_SIZE;
+			return PTR_SIZE;
+		}
+	case T_INT:
+		*align = 4;
+		return 4 ;
+	case T_SHORT:
+		*align = 2;
+		return 2 ;
+	default:			// char, void, function
+		*align = 1;
+		return 1 ;
+	}
+}
+
+/***********************************************************
+ * 功能:	返回t所指向的数据类型
+ * t:		指针类型
+ **********************************************************/
+Type *pointed_type(Type *t)
+{
+    return &t->ref->typeSymbol;
+}
+
+/***********************************************************
+ * 功能:	返回t所指向的数据类型尺寸
+ * t:		指针类型
+ **********************************************************/
+int pointed_size(Type *t)
+{
+    int align;
+    return type_size(pointed_type(t), &align);
+}
+
+int calc_align(int n , int align)
+{
+	return (n + align -1) & (~(align -1));
+}
+
+/*********************************************************** 
+ * 功能:	生成指针类型
+ * t:		原数据类型
+ **********************************************************/
+void mk_pointer(Type *t)
+{
+	Symbol *s;
+    s = sym_push(SC_ANOM, t, 0, -1);
+    t->type = T_PTR ;
+    t->ref = s;
+}
+
 /***********************************************************
  * 功能:	词法分析初始化
  **********************************************************/

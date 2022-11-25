@@ -123,6 +123,7 @@ void gen_op(int op)
 		// 如果是比较大小。
 		if (op >= TK_EQ && op <= TK_GEQ)   // >,<,>=.<=...
 		{
+			// 生成机器码。
 			gen_opInteger(op);
 			operand_stack_top->type.type = T_INT;
 		}
@@ -141,14 +142,17 @@ void gen_op(int op)
 			}
 			// 取出被操作数的大小。例如char * ptr_one的大小就是1。
 			u = pointed_size(&operand_stack_last_top->type);
+			// 生成机器码。
 			gen_opInteger(op);
+			// 两个指针的地址差为整数类型。
 			operand_stack_top->type.type = T_INT;
+			// 结果还需要除以整数大小，也就是4。
 			operand_push(&int_type, SC_GLOBAL, 
 				pointed_size(&operand_stack_last_top->type));
 			gen_op(TK_DIVIDE);
 		}
 		/************************************************************************/
-		/* 两个操作数一个是指针，另一个不是指针，并且非关系运算。               */
+		/* 两个操作数一个是指针，另一个不是指针，并且非关系运算。为指针移动     */
 		/* 例如对于a[3]来说，a就是指针，3则不是指针。                           */
 		/* 此时栈顶元素为数组下标3，类型为T_INT。                               */
 		/* 次栈顶元素为数组变量a，类型为T_PTR。                                 */
@@ -212,4 +216,22 @@ void gen_op(int op)
 		}
 
 	}
+}
+
+void array_initialize()
+{
+	spill_reg(REG_ECX);
+
+	gen_opcodeOne(0xB8 + REG_ECX);
+	gen_dword(operand_stack_top->type.ref->related_value);
+	gen_opcodeOne(0xB8 + REG_ESI);
+	gen_addr32(operand_stack_top->storage_class, operand_stack_top->sym, operand_stack_top->value);
+	operand_swap();
+	
+	gen_opcodeOne(0x8D);
+	gen_modrm(ADDR_OTHER, REG_EDI, SC_LOCAL, operand_stack_top->sym, operand_stack_top->value);
+
+	gen_prefix((char)0xF3);
+	gen_opcodeOne((char)0xA4);
+	operand_stack_top -= 2;
 }
