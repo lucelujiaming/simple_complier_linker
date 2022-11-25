@@ -59,7 +59,8 @@ void relational_expression();
 
 void external_declaration(e_StorageClass iSaveType);
 
-Section * allocate_storage(Type * type, int r, int has_init, int v, int *addr);
+Section * allocate_storage(Type * typeCurrent, int storage_class, 
+						   e_Sec_Storage sec_area, int token_code, int *addr);
 void init_variable(Type * type, Section * sec, int c); // , int v);
 
 void print_error(char * strErrInfo)
@@ -373,7 +374,8 @@ void print_all_stack(char* strPrompt)
 /************************************************************************/
 void initializer(Type * typeToken, int c, Section * sec)
 {
-	// 如果是全局数据变量的数组初始化。例如：
+	// 如果是数据变量的数组初始化。例如我们定义了两个变量，
+	// 当我们解析第二个变量的时候，我们就会进入这个分支：
 	//     char g_char = 'a';  
 	//     char ss[5] = "SSSSS";
 	if((typeToken->type & T_ARRAY) && sec)
@@ -381,13 +383,16 @@ void initializer(Type * typeToken, int c, Section * sec)
 	    // 只需要把右值直接复制到节内部即可。复制后sec->data的内容变成：
 		//   "aSSSSS"
 		memcpy(sec->data + c, get_current_token(), strlen(get_current_token()));
-		get_token();
+		// Move outside and put after the init_variable @2022/11/25 by lujiaming
+		// get_token();
 	}
 	else
 	{
 		// 解析全局变量，字符串常量和局部变量的右值。
 		assignment_expression();
 		init_variable(typeToken, sec, c); // , 0);
+		// Move here @2022/11/25 by lujiaming
+		// get_token();
 	}
 }
 
@@ -1468,8 +1473,14 @@ void primary_expression()
 		mk_pointer(&typeExpression);
 		typeExpression.type |= T_ARRAY;
 		// 字符串常量在.rdata节分配存储空间
-        sec = allocate_storage(&typeExpression,SC_GLOBAL, 2, 0, &addr);
-		var_sym_put(&typeExpression, SC_GLOBAL, 0, addr);
+        // sec = allocate_storage(&typeExpression, 
+        //	      SC_GLOBAL, SEC_RDATA_STORAGE, 0, &addr);
+		// var_sym_put(&typeExpression, SC_GLOBAL, 0, addr);
+
+		// 字符串常量不应该是0 - TK_PLUS。而应该是TK_CSTR
+        sec = allocate_storage(&typeExpression, 
+        	SC_GLOBAL, SEC_RDATA_STORAGE, TK_CSTR, &addr);
+		var_sym_put(&typeExpression, SC_GLOBAL, TK_CSTR, addr);
 		initializer(&typeExpression, addr, sec);
 		break;
 	case TK_OPENPA:
@@ -1761,15 +1772,16 @@ int type_specifier(Type * typeSpec)
 void external_declaration(e_StorageClass iSaveType)
 {
 	Type bTypeCurrent, typeCurrent ;
-	// v:	符号编号。类型为e_TokenCode。这里改为symbol_index。
+	// v:	符号编号。类型为e_TokenCode。这里改为token_code。
 	// int v = -1; // , has_init, addr;
-	int symbol_index = -1; 
+	int token_code = -1; 
 	
 	// 这里的addr暂时没有用到。这个是用法是首先调用allocate_storage函数，从这个函数中获得。
 	// 这个函数主要用于在空间不够的时候，分配节的空间，同时返回当前符号在节中的存储位置。
 	// 这里的节是一个可执行程序中的概念。例如代码节，数据节，符号表节。
 	// int has_init, r, addr = 0;
-	int has_init, storage_class, addr = 0;
+	e_Sec_Storage sec_area;
+	int storage_class, addr = 0;
 	Symbol * sym;
 	Section * sec = NULL;
 	print_all_stack("Starting external_declaration");
@@ -1790,7 +1802,7 @@ void external_declaration(e_StorageClass iSaveType)
 	while (1)
 	{
 		typeCurrent = bTypeCurrent;
-		declarator(&typeCurrent, &symbol_index, NULL);
+		declarator(&typeCurrent, &token_code, NULL);
 		// 函数定义
 		if (get_current_token_type() == TK_BEGIN)
 		{
@@ -1805,7 +1817,7 @@ void external_declaration(e_StorageClass iSaveType)
 				print_error("Needing function defination\n");
 			}
 			// 如果查找到了这个符号。说明前面进行了函数定义。
-			sym = sym_search(symbol_index);
+			sym = sym_search(token_code);
 			if(sym)
 			{
 				// 如果发现前面定义的不是函数定义。而是一个变量定义，就报错退出。
@@ -1820,7 +1832,7 @@ void external_declaration(e_StorageClass iSaveType)
 			// 如果没有找到，就直接添加。
 			else
 			{
-				sym = func_sym_push(symbol_index, &typeCurrent);
+				sym = func_sym_push(token_code, &typeCurrent);
 			}
 			// 全局普通符号。
 			sym->storage_class = SC_SYM | SC_GLOBAL;
@@ -1833,9 +1845,9 @@ void external_declaration(e_StorageClass iSaveType)
 			// 函数声明
 			if((typeCurrent.type & T_BTYPE) == T_FUNC)
 			{
-				if (sym_search(symbol_index) == NULL)
+				if (sym_search(token_code) == NULL)
 				{
-					sym = sym_push(symbol_index, &typeCurrent, SC_GLOBAL | SC_SYM, 0);
+					sym = sym_push(token_code, &typeCurrent, SC_GLOBAL | SC_SYM, 0);
 				}
 			}
 			// 变量声明
@@ -1850,32 +1862,44 @@ void external_declaration(e_StorageClass iSaveType)
 				storage_class |= iSaveType;
 				// 如果变量声明的时候同时做了赋初值。执行赋初值操作。
 				// if (get_current_token_type() == TK_ASSIGN)  // int a = 5 ;
-				has_init = (get_current_token_type() == TK_ASSIGN);
+				if (get_current_token_type() == TK_ASSIGN)
+				{
+					sec_area = SEC_DATA_STORAGE;
+				}
+				else 
+				{
+					sec_area = SEC_BSS_STORAGE;
+				}
 				// 这里的这句if(has_init)其实可以等价于：
 				//     if (get_current_token_type() == TK_ASSIGN)
 				// 但是这个判断用的太多了。于是这里提出来。
 				// 同时，这个判断是不受get_token影响的。
-				if(has_init)
+				if(sec_area == SEC_DATA_STORAGE)
 				{
-					get_token();
+					// 取得等号后面的右值。
+					get_token(); //不能放到后面，
 				//	initializer(&typeCurrent);
 				}
 				// 这里主要做了3项工作：
 				//   (1) 为变量分配存储空间，局部变量存放在栈中，
 				//       全局变量分两类，声明时进行赋值的存放在.data数据节中，
 				//       声明时不进行赋值的存放在.bss节中。
+				// 代码执行到这里的时候，如果存在赋值，我们已经取到了等号后面的右值。
+				// 之所以要这样做，是因为我们需要处理char str[]="abc"的情况，
+				// 通过allocate_storage求字符串长度。
 				// 首先为符号分配空间，
-			    sec = allocate_storage(&typeCurrent, storage_class, has_init, symbol_index, &addr);
+			    sec = allocate_storage(&typeCurrent, storage_class,
+			    							sec_area, token_code, &addr);
 				// 之后添加符号。
-				sym = var_sym_put(&typeCurrent, storage_class, symbol_index, addr);
+				sym = var_sym_put(&typeCurrent, storage_class, token_code, addr);
 				//   (2) 将全局变量放人COFF符号表。
 			    if (iSaveType == SC_GLOBAL)
 			    {
 				    coffsym_add_update(sym, addr, sec->index, 0, IMAGE_SYM_CLASS_EXTERNAL);
 			    }
-				// (3) 对声明时进行赋值的变量进行初始化。
-				//     如果上一个token是等号，使用当前token进行赋值。
-			    if (has_init)  // int a = 5 ;
+				//   (3) 对声明时进行赋值的变量进行初始化。
+				//       如果上一个token是等号，使用当前token进行赋值。
+			    if (sec_area == SEC_DATA_STORAGE)  // int a = 5 ;
 			    {
 				    initializer(&typeCurrent, addr, sec);
 			    }
@@ -1897,23 +1921,46 @@ void external_declaration(e_StorageClass iSaveType)
 
 /************************************************************************/
 /* 功能：分配存储空间                                                   */
-/* type：变量类型                                                       */
-/* r：变量存储类型                                                      */
-/* has_in it：是否需要进行初始化                                        */
-/* v：变量符号编号                                                      */
-/* addr(输出) ：变量存储地址                                            */
-/* 返回值：变量存储节。                                                 */
-/*         对于全局变量和字符串常量返回对应节的地址。并更新偏移量。     */
-/*         对于局部变量返回NULL。                                       */
+/* typeCurrent：  变量类型                                              */
+/* storage_class：变量存储类型                                          */
+/* sec_area：     根据是否是字符串常量和是否需要进行初始化。            */
+/*                控制在哪一个节分配存储空间。                          */
+/* token_code：   变量符号编号。类型为e_TokenCode。                     */
+/*                因为小于TK_IDENT是保留值。                            */
+/*                因此上，该值通常大于TK_IDENT。                        */
+/*         注意： 对于常量字符串的时候，我们传入了TK_CSTR。             */
+/*                虽然这里只需要传入一个小于TK_IDENT的保留值。          */
+/*                甚至之前的代码传入了零。                              */
+/*                但是为了便于理解，我们修改为传入TK_CSTR。             */
+/*                这个值在var_sym_put的时候，会用来调用sym_search。
+                               */
+/* addr(输出) ：  变量存储偏移量地址。                                  */
+/*                对于全局变量和字符串常量返回节内偏移量。              */
+/*                对于局部变量返回栈内偏移量。                          */
+/* 返回值：       变量存储节。                                          */
+/*                对于全局变量和字符串常量返回对应节的地址。更新偏移量。*/
+/*                对于局部变量返回NULL。                                */
 /************************************************************************/
-Section * allocate_storage(Type * typeCurrent, int storage_class, int has_init, int token_code, int *addr)
+/* 函数逻辑如下：                                                       */
+/*   首先我们调用type_size计算需要分配的存储空间。                      */
+/*   这里有一个技巧。就是：                                             */
+/*       如果是char * str1，他的长度是不固定的。这种情况下返回-1。      */
+/*       能够返回-1的原因是typeCurrent->related_value = -1。            */
+/*   如果type_size返回-1.就会使用前面读到的右值计算数据长度。           */
+/*   之后我们就可以利用前面计算出来的长度分配空间了。                   */
+/*   如果是全局变量。就分配在节上。如果是局部变量，就分配在栈上。       */
+/************************************************************************/
+Section * allocate_storage(Type * typeCurrent, int storage_class, 
+						   e_Sec_Storage sec_area, int token_code, int *addr)
 {
 	int size, align;
 	Section * sec= NULL;
+	// 调用type_size计算需要分配的存储空间，
 	size = type_size(typeCurrent, &align);
-
+	// type_size返回-1说明是不定长指针数组。
 	if (size < 0)
 	{
+		// 使用前面读到的右值计算数据长度。
 		if (typeCurrent->type & T_ARRAY 
 			&& typeCurrent->ref->typeSymbol.type == T_CHAR)
 		{
@@ -1934,20 +1981,20 @@ Section * allocate_storage(Type * typeCurrent, int storage_class, int has_init, 
 	{
 		// 初始化的全局变量在.data节分配存储空间
 		// 通过判断(get_current_token_type() == TK_ASSIGN)得到。
-		if (has_init == SEC_DATA_STORAGE)
+		if (sec_area == SEC_DATA_STORAGE)
 		{
 			sec = sec_data;
 		}
 		// 字符串常量在.rdata节分配存储空间
 		// 代码位于primary_expression的TK_CSTR分支。
-		else if (has_init == SEC_RDATA_STORAGE)	
+		else if (sec_area == SEC_RDATA_STORAGE)	
 		{
 			sec = sec_rdata;
 		}
 		// 未初始化的全局变量在.bss节分配存储空间
 		// 通过判断(get_current_token_type() == TK_ASSIGN)得到。
 		// (has_init == SEC_BSS_STORAGE)
-		else if (has_init == SEC_BSS_STORAGE)	
+		else if (sec_area == SEC_BSS_STORAGE)	
 		{
 			sec = sec_bss;
 		}
@@ -1965,8 +2012,9 @@ Section * allocate_storage(Type * typeCurrent, int storage_class, int has_init, 
 		{
 			section_realloc(sec, sec->data_offset);
 		}
-		// 常量字符串
-		if (token_code == 0)
+		// 在.rdata节分配存储空间的常量字符串。
+		// if (token_code == 0)
+		if (token_code == TK_CSTR)
 		{
 			operand_push(typeCurrent, SC_GLOBAL | SC_SYM, *addr);
 		//	operand_stack_top->sym = sym_sec_rdata;

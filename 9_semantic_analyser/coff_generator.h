@@ -7,7 +7,7 @@
 
 #define MAXKEY	1024				// ¹þÏ£±íÈÝÁ¿
 
-enum{
+enum e_Sec_Storage{
 	SEC_BSS_STORAGE   = 0,
 	SEC_DATA_STORAGE  = 1,
 	SEC_RDATA_STORAGE = 2

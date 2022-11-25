@@ -136,7 +136,8 @@ Symbol * var_sym_put(Type * type, int storage_class, int token_code, int addr)
 	{
 		sym = sym_push(token_code, type, storage_class, addr);
 	}
-	else if((storage_class & SC_VALMASK) == SC_GLOBAL)
+	else if((storage_class & SC_VALMASK) == SC_GLOBAL	// 是全局变量，
+		 && (token_code != TK_CSTR))					// 但不是字符串常量
 	{
 		sym = sym_search(token_code);
 		if(sym)
@@ -234,8 +235,8 @@ Symbol * struct_search(int v)
 }
 
 /***********************************************************
- *  功能：声明与函数定义
- *  l：   存储类型，局部的还是全局的
+ * 功能:	查找结构定义 
+ * v:		符号编号
  **********************************************************/
 Symbol * sym_search(int v)
 {
@@ -248,7 +249,14 @@ Symbol * sym_search(int v)
 		return NULL;
 }
 
-// 
+
+/************************************************************************/
+/* 功能:		返回类型长度                                            */
+/* typeCal:		数据类型指针                                            */
+/* align:		对齐值                                                  */
+/* 返回值:	                                                            */
+/*     指针类型返回-1。其他类型会计算出实际的长度。                     */
+/************************************************************************/
 int type_size(Type * typeCal, int * align)
 {
 	Symbol *s;
