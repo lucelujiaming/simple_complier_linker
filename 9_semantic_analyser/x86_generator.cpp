@@ -160,50 +160,71 @@ void load(int storage_class, Operand * opd)
 		// 这就是下面代码中的神秘数字的来源。
 		if ((ft & T_BTYPE) == T_CHAR)
 		{
+			// 参考MOVSX的命令格式在Intel白皮书1250页可以发现：
+			//     0F BE表示是" Move byte to doubleword with sign-extension."。
 			// movsx -- move with sign-extention	
 			// 0F BE /r	movsx r32,r/m8	move byte to doubleword,sign-extention
-			gen_opcodeTwo(0x0f, 0xbe); // 0F BE -> movsx r32, r/m8
+			// 0F BE -> movsx r32, r/m8
+			gen_opcodeTwo(OPCODE_MOVSX_BYTE_TO_DOUBLEWORD_HIGH_BYTE, // 0x0f, 
+				OPCODE_MOVSX_BYTE_TO_DOUBLEWORD_LOW_BYTE); // 0xbe); 
 		}
 		else if ((ft & T_BTYPE) == T_SHORT)
 		{
+			// 参考MOVSX的命令格式在Intel白皮书1250页可以发现：
+			//     0F BF表示是"Move word to doubleword, with sign-extension."。
 			// movsx -- move with sign-extention	
 			// 0F BF /r	movsx r32,r/m16	move word to doubleword,sign-extention
-			gen_opcodeTwo(0x0f, 0xbf); // 0F BF -> movsx r32, r/m16
+			// 0F BF -> movsx r32, r/m16
+			gen_opcodeTwo(OPCODE_MOVSX_WORD_TO_DOUBLEWORD_HIGH_BYTE, // 0x0f, 
+				OPCODE_MOVSX_WORD_TO_DOUBLEWORD_LOW_BYTE); // 0xbf); 
 		}
 		else 
 		{
+			// 参考MOV的命令格式在Intel白皮书1161页可以发现：
+			//     8B表示是"Move r/m32 to r32."。
 			// 8B /r	mov r32,r/m32	mov r/m32 to r32
-			gen_opcodeOne(0x8b); // 8B -> mov r32, r/m32
+			gen_opcodeOne(OPCODE_MOV_RM32_TO_R32); // 0x8b); // 8B -> mov r32, r/m32
 		}
 		gen_modrm(ADDR_OTHER, storage_class, fr, opd->sym, fc);
 	}
 	else    // 右值
 	{
+		// 如果右值是全局变量。例如：立即数。注意：
+		// 很多局部变量其实是放在寄存器中的。此时，不会为右值生成指令。例如：
+		//     int  c = g_a ; // g_a为全局变量。
 		if (v == SC_GLOBAL)
 		{
 			// B8+ rd	mov r32,imm32		mov imm32 to r32
-			gen_opcodeOne(0xb8 + storage_class);
+			gen_opcodeOne(OPCODE_MOVE_IMM32_TO_R32 + storage_class);
 			gen_addr32(fr, opd->sym, fc);
 		}
+		// 如果右值是局部变量。注意：
+		// 很多局部变量其实是放在寄存器中的。此时，不会为右值生成指令。
+		// 只有需要对右值寻址的情况下，才会进入这个分支。例如：
+		//    int  * pa = &a;
+		//    int x = pt.x;
 		else if (v == SC_LOCAL)
 		{
 			// LEA--Load Effective Address
 			// 8D /r	LEA r32,m	Store effective address for m in register r32
-			gen_opcodeOne(0x8d);
+			gen_opcodeOne(OPCODE_LEA_EFFECTIVE_ADDRESS_IN_R32);
 			gen_modrm(ADDR_OTHER, storage_class, SC_LOCAL, opd->sym, fc);
 		}
 		else if (v == SC_CMP) // 适用于c=a>b情况
 		{
-		/*适用情况生成的样例代码
-		  00401384   39C8             CMP EAX,ECX
-		  00401386   B8 00000000      MOV EAX,0
-		  0040138B   0F9FC0           SETG AL
-		  0040138E   8945 FC          MOV DWORD PTR SS:[EBP-4],EAX*/
-
+			/************************************************************************/
+			/*  适用情况生成的样例代码                                              */
+			/*  00401384   39C8             CMP EAX,ECX                             */
+			/*  00401386   B8 00000000      MOV EAX,0                               */
+			/*  0040138B   0F9FC0           SETG AL                                 */
+			/*  0040138E   8945 FC          MOV DWORD PTR SS:[EBP-4],EAX            */
+			/************************************************************************/
 			/*B8+ rd	mov r32,imm32		mov imm32 to r32*/
-			gen_opcodeOne(0xb8 + storage_class); /* mov r, 0*/
+			gen_opcodeOne(OPCODE_MOVE_IMM32_TO_R32 + storage_class); /* mov r, 0*/
 			gen_dword(0);
 			
+			// 参考SETcc的命令格式在Intel白皮书1718页可以发现：
+			//     0F 9F表示是"Set byte if greater (ZF=0 and SF=OF)."。
 			// SETcc--Set Byte on Condition
 			// OF 9F			SETG r/m8	Set byte if greater(ZF=0 and SF=OF)
 			// 0F 8F cw/cd		JG rel16/32	jump near if greater(ZF=0 and SF=OF)
@@ -213,7 +234,7 @@ void load(int storage_class, Operand * opd)
 		else if (v != storage_class)
 		{
 			// 89 /r	MOV r/m32,r32	Move r32 to r/m32
-			gen_opcodeOne(0x89);
+			gen_opcodeOne(OPCODE_STORE_SHORT_INT_OPCODE);
 			gen_modrm(ADDR_REG, v, storage_class, NULL, 0);
 		}
 	}
@@ -758,14 +779,14 @@ void gen_addsp(int val)
 	if (val == (char)val) 
 	{
 		// ADD--Add	83 /0 ib	ADD r/m32,imm8	Add sign-extended imm8 from r/m32
-		gen_opcodeOne(0x83);	// ADD esp,val
+		gen_opcodeOne(ONE_BYTE_OPCODE_IMME_GRP_TO_IMM8);	// ADD esp,val
 		gen_modrm(ADDR_REG,opc,REG_ESP,NULL,0);
         gen_byte(val);
     } 
 	else 
 	{
 		// ADD--Add	81 /0 id	ADD r/m32,imm32	Add sign-extended imm32 to r/m32
-		gen_opcodeOne(0x81);	// add esp, val
+		gen_opcodeOne(ONE_BYTE_OPCODE_IMME_GRP_TO_IMM32);	// add esp, val
 		gen_modrm(ADDR_REG,opc,REG_ESP,NULL,0);
 		gen_dword(val);
     }
@@ -841,8 +862,8 @@ void array_initialize()
 
 	/*    MOV ECX,  5 对应的机器码如下：        */
 	/*    B9 05000000                           */
-	/* 参考MOV的命令格式在Intel白皮书1161页可以发现：       */
-	/*     0x0xB8表示是"Move imm32 to r32."。               */
+	// 参考MOV的命令格式在Intel白皮书1161页可以发现：
+	//     0x0xB8表示是"Move imm32 to r32."。 
 	gen_opcodeOne(OPCODE_MOVE_IMM32_TO_R32 + REG_ECX);
 	gen_dword(operand_stack_top->type.ref->related_value);
 	
@@ -854,14 +875,14 @@ void array_initialize()
 	
 	/*    LEA EDI,  DWORD PTR SS: [EBP-9] 对应的机器码如下：   */
 	/*    8D7D F7                                              */
-	/* 参考LEA的命令格式在Intel白皮书1101页可以发现：       */
-	/*     0xB8表示是"Store effective address for m in register r32."。               */
+	// 参考LEA的命令格式在Intel白皮书1101页可以发现：
+	//     0xB8表示是"Store effective address for m in register r32."。
 	gen_opcodeOne(OPCODE_LEA_EFFECTIVE_ADDRESS_IN_R32);
 	gen_modrm(ADDR_OTHER, REG_EDI, SC_LOCAL, operand_stack_top->sym, operand_stack_top->value);
 	/* REP MOVS  BYTE PTR ES: [EDI], BYTE PTR DS: [ESI]对应的机器码如下：   */
 	/*    F3: A4                                                            */
-	/* 参考REP MOVS的命令格式在Intel白皮书1671页可以发现：       */
-	/*     F3 A4表示是"Move (E)CX bytes from DS:[(E)SI] to ES:[(E)DI]."。               */
+	// 参考REP MOVS的命令格式在Intel白皮书1671页可以发现：
+	//     F3 A4表示是"Move (E)CX bytes from DS:[(E)SI] to ES:[(E)DI]."。
 	gen_prefix((char)OPCODE_REP_PREFIX);
 	gen_opcodeOne((char)OPCODE_MOVE_ECX_BYTES_DS_ESI_TO_ES_EDI);
 	// 弹出ECX和ESI

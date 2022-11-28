@@ -372,6 +372,26 @@ void print_all_stack(char* strPrompt)
 /* sec： 变量所在节。对于全局变量和字符串常量为相应节地址。             */
 /*                   对于局部变量为NULL。                               */
 /************************************************************************/
+/* 函数逻辑如下：                                                       */
+/*   1. 这个函数的主分支是else部分。                                    */
+/*      1.1 首先调用assignment_expression进行表达式分析。               */
+/*          因为右值，也有可能是一个表达式。                            */
+/*      1.2 之后，我们调用init_variable完成赋值操作。                   */
+/*   2. 这个函数的副分支是if部分。该部分对于字符串赋值进行特殊处理。    */
+/*      这个分支包括两个调用路径。                                      */
+/*      2.1 局部字符串变量。char str1[] = "AAAAA"; 处理流程为：         */
+/*	        在我们调用assignment_expression进行表达式分析的时候，       */
+/*		    如果右值是一个字符串，会进入primary_expression中处理。      */
+/*		    走TK_CSTR分支。为变量分配空间，把变量放入符号表。           */
+/*		    之后嵌套调用initializer完成变量初始化。                     */
+/*      2.2 全局字符串变量。char g_str1[] = "AAAAA"; 处理流程为：       */
+/*          在external_declaration中，为变量分配空间，把变量放入符号表。*/
+/*		    之后嵌套调用initializer完成变量初始化。                     */
+/*		因为前面调用allocate_storage分配空间的时候，返回值sec不是空。   */
+/*		同时我们前面指定了T_ARRAY类型标志。                             */
+/*		这导致我们进入initializer函数的if部分。                         */
+/*		把字符串memcpy到节的指定位置。                                  */
+/************************************************************************/
 void initializer(Type * typeToken, int c, Section * sec)
 {
 	// 如果是数据变量的数组初始化。例如我们定义了两个变量，
@@ -383,15 +403,14 @@ void initializer(Type * typeToken, int c, Section * sec)
 	    // 只需要把右值直接复制到节内部即可。复制后sec->data的内容变成：
 		//   "aSSSSS"
 		memcpy(sec->data + c, get_current_token(), strlen(get_current_token()));
-		// Move outside and put after the init_variable @2022/11/25 by lujiaming
-		// get_token();
+		get_token();
 	}
 	else
 	{
 		// 解析全局变量，字符串常量和局部变量的右值。
 		assignment_expression();
 		init_variable(typeToken, sec, c); // , 0);
-		// Move here @2022/11/25 by lujiaming
+		// get_token can not move here. It only work when token == TK_CSTR
 		// get_token();
 	}
 }
@@ -1295,22 +1314,27 @@ void sizeof_expression()
 /*     int x；                                                          */
 /*     struct point pt;                                                 */
 /*     int arr[10];                                                     */
-/* 一条形如 x = arr[1]; 的语句包括如下的指令。                          */
-/*  1. MOV EAX,  1                                                      */
-/*  2. MOV ECX,  0                                                      */
-/*  3. IMUL ECX,  EAX                                                   */
-/*  4. LEA EAX,  DWORD PTR SS: [EBP-C]                                  */
-/*  5. ADD EAX,  ECX                                                    */
-/*  6. MOV ECX,  DWORD PTR DS: [EAX]                                    */
-/*  7. MOV DWORD PTR SS: [EBP-4], ECX                                   */
 /* 一条形如 x = pt.m_x; 的语句包括如下的指令。                          */
-/*  1. MOV EAX,  4                                                      */
-/*  2. MOV ECX,  1                                                      */
+/*  1. MOV  EAX,  1                                                     */
+/*  2. MOV  ECX,  0                                                     */
 /*  3. IMUL ECX,  EAX                                                   */
-/*  4. LEA EAX,  DWORD PTR SS: [EBP-34]                                 */
-/*  5. ADD EAX.ECX                                                      */
-/*  6. MOV ECX,  DWORD PTR DS: [EAX]                                    */
-/*  7. MOV DWORD PTR SS: [EBP-4], ECX                                   */
+/*  4. LEA  EAX,  DWORD PTR SS: [EBP-C]                                 */
+/*  5. ADD  EAX,  ECX                                                   */
+/*  6. MOV  ECX,  DWORD PTR DS: [EAX]                                   */
+/*  7. MOV  DWORD PTR SS: [EBP-4], ECX                                  */
+/* 这段汇编码的逻辑也很简单。首先m_x是struct point pt的第0个元素。      */
+/* 所以ECX = 0，EAX表示数据大小。将ECX和EAX相乘得到偏移量。             */
+/* 之后读取[EBP-C]位置的地址，也就是栈中pt的位置地址。之后加上偏移量。  */
+/* 最后根据计算出来的偏移量读取数据到ECX。之后放到另一个栈位置中。      */
+/************************************************************************/
+/* 一条形如 x = arr[1]; 的语句包括如下的指令。                          */
+/*  1. MOV  EAX,  4                                                     */
+/*  2. MOV  ECX,  1                                                     */
+/*  3. IMUL ECX,  EAX                                                   */
+/*  4. LEA  EAX,  DWORD PTR SS: [EBP-34]                                */
+/*  5. ADD  EAX,  ECX                                                   */
+/*  6. MOV  ECX,  DWORD PTR DS: [EAX]                                   */
+/*  7. MOV  DWORD PTR SS: [EBP-4], ECX                                  */
 /************************************************************************/
 void postfix_expression()
 {
