@@ -89,7 +89,7 @@ void store_zero_to_one()
 		Operand opd;
 	//	t = allocate_reg(REG_ANY);
 		operand_assign(&opd, T_INT, SC_LOCAL | SC_LVAL, 
-			operand_stack_last_top->value);
+			operand_stack_last_top->operand_value);
 		load(t, &opd);
 		operand_stack_last_top->storage_class = t | SC_LVAL;
 	}

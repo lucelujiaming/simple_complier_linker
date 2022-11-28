@@ -461,10 +461,10 @@ void init_variable(Type * type, Section * sec, int c) // , int v)
 		// 更新节中对应的位置。
 		switch(bt) {
 		case T_CHAR:
-			*(char *)ptr = operand_stack_top->value;
+			*(char *)ptr = operand_stack_top->operand_value;
 			break;
 		case T_SHORT:
-			*(short *)ptr = operand_stack_top->value;
+			*(short *)ptr = operand_stack_top->operand_value;
 			break;
 		default:
 			if(operand_stack_top)
@@ -474,7 +474,7 @@ void init_variable(Type * type, Section * sec, int c) // , int v)
 					coffreloc_add(sec, operand_stack_top->sym,c, IMAGE_REL_I386_DIR32);
 				}
 			}
-			*(int *)ptr = operand_stack_top->value;
+			*(int *)ptr = operand_stack_top->operand_value;
 			break;
 		}
 		operand_pop();
@@ -936,7 +936,7 @@ void check_leftvalue()
     // 如果不是左值就报错。
 	if (!(operand_stack_top->storage_class & SC_LVAL))
 	{
-		print_error("Need left value");
+		print_error("Need left_value");
 	}
 }
 
@@ -1559,7 +1559,7 @@ void primary_expression()
 			// 操作数必须记录符号地址
 			operand_stack_top->sym = token_symbol;      
 			// 因为这个符号是一个符号引用，因此上，常量值无效。
-            operand_stack_top->value = 0;  // 用于函数调用，及全局变量引用 printf("g_cc=%c\n",g_cc);
+            operand_stack_top->operand_value = 0;  // 用于函数调用，及全局变量引用 printf("g_cc=%c\n",g_cc);
         }
 		break;
 	}

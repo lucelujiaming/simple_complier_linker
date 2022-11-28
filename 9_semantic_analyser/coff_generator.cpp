@@ -167,12 +167,12 @@ int coffsym_add(Section * symtab, char * name, int val, int sec_index,
 	{
 		cfsym = (CoffSym *)section_ptr_add(symtab, sizeof(CoffSym));
 		csname = coffstr_add(strtab, name);
-		cfsym->name = csname - strtab->data;   // ????
-		cfsym->value = val;
-		cfsym->shortSection = sec_index;
-		cfsym->type = type;
-		cfsym->storageClass = StorageClass;
-		cfsym->value = val;
+		cfsym->name           = csname - strtab->data;   // ????
+		cfsym->coff_sym_value = val;
+		cfsym->shortSection   = sec_index;
+		cfsym->type           = type;
+		cfsym->storageClass   = StorageClass;
+		// cfsym->coff_sym_value = val;
 		keyno = elf_hash(name);
 		cfsym->next = hashtab[keyno];
 
@@ -203,7 +203,7 @@ void coffsym_add_update(Symbol *s, int val, int sec_index,
 	else
 	{
 		cfsym = &((CoffSym *)sec_symtab->data)[s->related_value];
-		cfsym->value = val;
+		cfsym->coff_sym_value = val;
 		cfsym->shortSection = sec_index;
 	}
 }

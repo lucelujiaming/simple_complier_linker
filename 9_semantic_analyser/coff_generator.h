@@ -35,7 +35,7 @@ typedef struct CoffSym
         DWORD   Long;			// offset into string table
     } name;
 	*/
-    DWORD   value;				// 与符号相关的值
+    DWORD   coff_sym_value;		// 与符号相关的值
     short   shortSection;		// 节表的索引(从1开始),用以标识定义此符号的节*/
     WORD    type;				// 一个表示类型的数字
     BYTE    storageClass;		// 这是一个表示存储类别的枚举类型值

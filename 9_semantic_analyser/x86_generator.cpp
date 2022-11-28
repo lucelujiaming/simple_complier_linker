@@ -143,7 +143,7 @@ void load(int storage_class, Operand * opd)
 	int v, ft, fc, fr;
 	fr = opd->storage_class;
 	ft = opd->type.type;
-	fc = opd->value;
+	fc = opd->operand_value;
 
 	v = fr & SC_VALMASK;
 	if (fr & SC_LVAL)    // 左值
@@ -307,7 +307,7 @@ void store(int r, Operand * opd)
 		fr == SC_LOCAL  ||				 // 局部变量，也就是栈中变量
 		(opd->storage_class & SC_LVAL))  // 左值
 	{
-		gen_modrm(ADDR_OTHER, r, opd->storage_class, opd->sym, opd->value);
+		gen_modrm(ADDR_OTHER, r, opd->storage_class, opd->sym, opd->operand_value);
 	}
 
 }
@@ -460,7 +460,7 @@ void gen_opTwoInteger(int reg_code, int op)
 	{
 		dst_storage_class = load_one(REG_ANY, operand_stack_last_top);
 		// 如果c是一个8位立即数。
-		c = operand_stack_top->value;
+		c = operand_stack_top->operand_value;
 		if (c == (char)c)
 		{
 			// ADC--Add with Carry			83 /2 ib	ADC r/m32,imm8	Add with CF sign-extended imm8 to r/m32
@@ -510,22 +510,22 @@ void gen_opTwoInteger(int reg_code, int op)
 		operand_stack_top->storage_class = SC_CMP;
 		switch(op) {
 		case TK_EQ:
-			operand_stack_top->value = 0x84;
+			operand_stack_top->operand_value = 0x84;
 			break;
 		case TK_NEQ:
-			operand_stack_top->value = 0x85;
+			operand_stack_top->operand_value = 0x85;
 			break;
 		case TK_LT:
-			operand_stack_top->value = 0x8c;
+			operand_stack_top->operand_value = 0x8c;
 			break;
 		case TK_LEQ:
-			operand_stack_top->value = 0x8e;
+			operand_stack_top->operand_value = 0x8e;
 			break;
 		case TK_GT:
-			operand_stack_top->value = 0x8f;
+			operand_stack_top->operand_value = 0x8f;
 			break;
 		case TK_GEQ:
-			operand_stack_top->value = 0x8d;
+			operand_stack_top->operand_value = 0x8d;
 			break;
 		}
 	}
@@ -621,7 +621,7 @@ int gen_jcc(int t)
 		// .....
 		// 0F 8F cw/cd		JG rel16/32	jump near if greater(ZF=0 and SF=OF)
 		// .....
-		gen_opcodeTwo(0x0f, operand_stack_top->value ^ inv);
+		gen_opcodeTwo(0x0f, operand_stack_top->operand_value ^ inv);
 		t = makelist(t);
 	}
 	else
@@ -833,7 +833,7 @@ void gen_call()
 		coffreloc_add(sec_text, operand_stack_top->sym, 
 			sec_text_opcode_ind + 1, IMAGE_REL_I386_REL32);
 		gen_opcodeOne(0xe8);
-		gen_dword(operand_stack_top->value - 4);
+		gen_dword(operand_stack_top->operand_value - 4);
 	}
 	else
 	{
@@ -870,7 +870,7 @@ void array_initialize()
 	/*    MOV ESI,  scc_anal.00403015; ASCII"strl"                          */
 	/*    BE 15304000                                                       */
 	gen_opcodeOne(OPCODE_MOVE_IMM32_TO_R32 + REG_ESI);
-	gen_addr32(operand_stack_top->storage_class, operand_stack_top->sym, operand_stack_top->value);
+	gen_addr32(operand_stack_top->storage_class, operand_stack_top->sym, operand_stack_top->operand_value);
 	operand_swap();
 	
 	/*    LEA EDI,  DWORD PTR SS: [EBP-9] 对应的机器码如下：   */
@@ -878,7 +878,7 @@ void array_initialize()
 	// 参考LEA的命令格式在Intel白皮书1101页可以发现：
 	//     0xB8表示是"Store effective address for m in register r32."。
 	gen_opcodeOne(OPCODE_LEA_EFFECTIVE_ADDRESS_IN_R32);
-	gen_modrm(ADDR_OTHER, REG_EDI, SC_LOCAL, operand_stack_top->sym, operand_stack_top->value);
+	gen_modrm(ADDR_OTHER, REG_EDI, SC_LOCAL, operand_stack_top->sym, operand_stack_top->operand_value);
 	/* REP MOVS  BYTE PTR ES: [EDI], BYTE PTR DS: [ESI]对应的机器码如下：   */
 	/*    F3: A4                                                            */
 	// 参考REP MOVS的命令格式在Intel白皮书1671页可以发现：

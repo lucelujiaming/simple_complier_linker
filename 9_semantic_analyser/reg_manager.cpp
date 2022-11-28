@@ -88,7 +88,7 @@ void spill_reg(char storage_class)
 			{
 				p->storage_class = SC_LOCAL | SC_LVAL;
 			}
-			p->value = function_stack_loc;
+			p->operand_value = function_stack_loc;
 			break;
 		}
 	}

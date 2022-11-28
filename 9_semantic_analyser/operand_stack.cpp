@@ -12,7 +12,7 @@ std::vector<Operand>::iterator operand_stack_last_top = NULL;
 /*  r：操作数存储类型                                                   */
 /*  value：操作数值                                                     */
 /************************************************************************/
-void operand_push(Type* type, int storage_class, int value)
+void operand_push(Type* type, int storage_class, int operand_value)
 {
 	if (operand_stack_top == operand_stack.end())
 	{
@@ -22,9 +22,9 @@ void operand_push(Type* type, int storage_class, int value)
 	operand_stack_last_top = operand_stack_top;
 
 	operand_stack_top++;
-	operand_stack_top->type = *type;
+	operand_stack_top->type             = *type;
 	operand_stack_top->storage_class    = storage_class;
-	operand_stack_top->value = value;
+	operand_stack_top->operand_value    = operand_value;
 }
 
 /************************************************************************/
@@ -63,9 +63,9 @@ void operand_swap()
 /*  r：操作数存储类型                                                   */
 /*  value：操作数值                                                     */
 /************************************************************************/
-void operand_assign(Operand * opd, int token_code, int storage_class, int value)
+void operand_assign(Operand * opd, int token_code, int storage_class, int operand_value)
 {
-	opd->type.type = token_code;
+	opd->type.type     = token_code;
 	opd->storage_class = storage_class;
-	opd->value = value;
+	opd->operand_value = operand_value;
 }
