@@ -573,10 +573,13 @@ void backpatch(int t, int a)
 /************************************************************************/
 int gen_jmpforward(int t)
 {
+	// 参考JMP的命令格式在Intel白皮书1064页可以发现：
+	//     E9 cd表示是"Jump near, relative, RIP = RIP + 32-bit 
+    //                 displacement sign extended to 64-bits."。
 	// JMP--Jump		
 	// E9 cd	JMP rel32	
 	// Jump near,relative,displacement relative to next instruction
-	gen_opcodeOne(0xe9);
+	gen_opcodeOne(OPCODE_JUMP_NEAR); // (0xe9);
 	return makelist(t);
 }
 
@@ -590,16 +593,22 @@ void gen_jmpbackward(int a)
 	r = a - sec_text_opcode_ind - 1;
 	if (r = (char)r)
 	{
+		// 参考JMP的命令格式在Intel白皮书1064页可以发现：
+		//     EB cb表示是"Jump short, RIP = RIP + 8-bit displacement sign 
+	    //                 extended to 64-bits."。
 		// EB cb	JMP rel8	
 		// Jump short,relative,displacement relative to next instruction
-		gen_opcodeOne(0xeb);
+		gen_opcodeOne(OPCODE_JUMP_SHORT); //(0xeb);
 		gen_byte(r);
 	}
 	else
 	{
+		// 参考JMP的命令格式在Intel白皮书1064页可以发现：
+		//     E9 cd表示是"Jump near, relative, RIP = RIP + 32-bit 
+	    //                 displacement sign extended to 64-bits."。
 		// E9 cd	JMP rel32	
 		// Jump short,relative,displacement relative to next instruction
-		gen_opcodeOne(0xe9);
+		gen_opcodeOne(OPCODE_JUMP_NEAR); //(0xe9);
 		gen_dword(a - sec_text_opcode_ind - 4);
 	}
 }

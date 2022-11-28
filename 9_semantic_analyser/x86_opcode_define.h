@@ -52,5 +52,12 @@
 // 参考SETcc的命令格式在Intel白皮书1718页可以发现：
 //     0F 9F表示是"Set byte if greater (ZF=0 and SF=OF)."。
 #define OPCODE_Set_byte_if_greater_HIGH_BYTE        0x0F
-			
+// 参考JMP的命令格式在Intel白皮书1064页可以发现：
+//     E9 cd表示是"Jump near, relative, RIP = RIP + 32-bit 
+//                 displacement sign extended to 64-bits."。
+#define OPCODE_JUMP_NEAR                            0xE9
+// 参考JMP的命令格式在Intel白皮书1064页可以发现：
+//     EB cb表示是"Jump short, RIP = RIP + 8-bit displacement sign 
+//                 extended to 64-bits."。
+#define OPCODE_JUMP_SHORT                           0xEB
 #endif
