@@ -355,6 +355,9 @@ void gen_opInteger(int op)
 		break;
 	case TK_DIVIDE:
 	case TK_MOD:
+		/* 我们在Intel白皮书509页的Table 2-1.中查找F9。可以发现：               */
+		/*     因为我们是直接使用ECX。因此上Mod=0b11也就是3，R/M为001           */
+		/*     而reg_code = 0b111，也就是REG_EDI。                              */
 		reg_code = REG_EDI; // 7;
 		// 因为IDIV ECX会导致EAX除以ECX。
 		// 把除数和被除数加载到EAX和ECX中。
@@ -674,20 +677,21 @@ void gen_prolog(Type *func_type)
 	int param_addr;
 	Symbol * sym;
 	Type * type;
-
+	// 函数类型对象对应的符号表。
 	sym = func_type->ref;
+	// 获得函数的调用方式。默认为CDECL
 	func_call = sym->storage_class;
 	addr = 8;
 	function_stack_loc  = 0;
 	// 记录了函数体开始，以便函数体结束时填充函数头，因为那时才能确定开辟的栈大小。
 	func_begin_ind = sec_text_opcode_ind;
 	sec_text_opcode_ind += FUNC_PROLOG_SIZE;
-
+	// 不支持返回结构体，可以返回结构体指针
 	if (sym->typeSymbol.type == T_STRUCT)
 	{
 		print_error("Can not return T_STRUCT");
 	}
-
+	//  如果函数有参数，处理参数定义
 	while ((sym = sym->next) != NULL)
 	{
 		type = &sym->typeSymbol;
@@ -699,9 +703,10 @@ void gen_prolog(Type *func_type)
 		{
 			size = 4;
 		}
+		// 计算栈内偏移。作为符号的关联值。
 		param_addr = addr;
 		addr += size;
-
+		// 把参数符号放在符号栈
 		sym_push(sym->token_code & ~SC_PARAMS, type,
 			SC_LOCAL | SC_LVAL, param_addr);
 	}

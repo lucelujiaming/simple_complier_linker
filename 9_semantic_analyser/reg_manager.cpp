@@ -20,7 +20,7 @@ int allocate_reg(int rc)
 	int used;
 
     /* ²éÕÒ¿ÕÏĞµÄ¼Ä´æÆ÷ */
-	for (storage_class = 0; storage_class < REG_EBX; storage_class++)
+	for (storage_class = 0; storage_class <= REG_EBX; storage_class++)
 	{
 		if (rc & REG_ANY || storage_class == rc) 
 		{

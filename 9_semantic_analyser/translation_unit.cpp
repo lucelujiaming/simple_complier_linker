@@ -305,6 +305,7 @@ void func_body(Symbol * sym)
 {
 	// 1. 增加或更新COFF符号
 	sec_text_opcode_ind = sec_text->data_offset;
+	//    更新sym->related_value为符号COFF符号表中序号。
 	coffsym_add_update(sym, sec_text_opcode_ind, 
 		sec_text->index, CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
 	
@@ -1559,7 +1560,8 @@ void primary_expression()
 			// 操作数必须记录符号地址
 			operand_stack_top->sym = token_symbol;      
 			// 因为这个符号是一个符号引用，因此上，常量值无效。
-            operand_stack_top->operand_value = 0;  // 用于函数调用，及全局变量引用 printf("g_cc=%c\n",g_cc);
+            operand_stack_top->operand_value = 0;  
+			// 用于函数调用，及全局变量引用 printf("g_cc=%c\n",g_cc);
         }
 		break;
 	}

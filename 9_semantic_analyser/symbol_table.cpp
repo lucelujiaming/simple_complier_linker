@@ -60,22 +60,22 @@ Symbol * sym_direct_push(std::vector<Symbol> &ss, int token_code, Type * type, i
  **********************************************************/
 Symbol * sym_push(int token_code, Type * type, int storage_class, int related_value)
 {
-	Symbol *ps, **pps;
+	Symbol *new_symbol_ptr, **tktable_member_pptr;
 	TkWord *ts;
 	// std::vector<Symbol> * ss;
-
+	// 1. 我们在符号栈中添加一个符号。
 	if(local_sym_stack.size() == 0)
 	{
-		ps = sym_direct_push(local_sym_stack, token_code, type, related_value);
+		new_symbol_ptr = sym_direct_push(local_sym_stack, token_code, type, related_value);
 		print_all_stack("sym_push local_sym_stack");
 	}
 	else
 	{
-		ps = sym_direct_push(global_sym_stack, token_code, type, related_value);
+		new_symbol_ptr = sym_direct_push(global_sym_stack, token_code, type, related_value);
 		print_all_stack("sym_push global_sym_stack");
 	}
 
-	ps->storage_class = storage_class;
+	new_symbol_ptr->storage_class = storage_class;
 
 	// 因为不记录结构体成员和匿名符号
 	// 所以下面的逻辑分为两个部分。
@@ -83,24 +83,38 @@ Symbol * sym_push(int token_code, Type * type, int storage_class, int related_va
 	// 第二个(token_code < SC_ANOM)表明token_code这个符号不是匿名符号，结构成员变量，函数参数。
 	if((token_code & SC_STRUCT) || (token_code < SC_ANOM))
 	{
-		// printf("\n tktable.size = %d \n", tktable.size());
+		// 2. 根据token找到对应的单词结构。
+		//    在进入这个函数之前，我们已经做过语法分析。
+		//    此时tktable中，符号sym_struct成员或者sym_identifier成员是填充过值的。
+		//    但是当时填充的值是不完全。首先storage_class和related_value成员是不知道的。
+		//    而token_code也不对。因此上，这些值都需要
 		ts = &(TkWord)tktable[token_code & ~SC_STRUCT];
-		// printf("\n\t\t(v & ~SC_STRUCT) = (0x%03X,%d) and ts.tkcode = 0x%03X\n",
-		//	token_code & ~SC_STRUCT, token_code & ~SC_STRUCT, ts->tkcode);
+		
+		// 下面几句话的结果就是：
+		//    ts的sym_struct/sym_identifier成员指向new_symbol，
+		//    而new_symbol的prev_tok成员指向sym_struct/sym_identifier成员之前的值。
+		// 结果就是ts的sym_struct/sym_identifier成员指向一个链表。
+		// 这个链表上都是同一个名字的Symbol。
+		// 也就等于，在ts的sym_struct/sym_identifier的链表头上插入当前新添加的符号。
+		// 想要看懂这里，需要仔细阅读sym_pop的逻辑。
+
 		// 如果是结构体符号。设置sym_struct成员。
 		if(token_code & SC_STRUCT)
-			pps = &ts->sym_struct;
-		// 否则就是小于SC_ANOM的符号。
+			tktable_member_pptr = &ts->sym_struct;
+		// 否则就是小于SC_ANOM的符号。设置sym_identifier成员。
 		else
-			pps = &ts->sym_identifier;
-
-		ps->prev_tok = *pps;
-		*pps = ps;
+			tktable_member_pptr = &ts->sym_identifier;
+		// 新添加的符号指向单词表中的标识符符号。
+		new_symbol_ptr->prev_tok = *tktable_member_pptr;
+		// tktable的符号成员指向新添加的符号。
+		*tktable_member_pptr = new_symbol_ptr;
+		
 		tktable[token_code & ~SC_STRUCT] = *ts;
 		printf("sym_push:: (%s, %08X, %08X) \n", tktable[token_code & ~SC_STRUCT].spelling, 
 			tktable[token_code & ~SC_STRUCT].sym_struct, tktable[token_code & ~SC_STRUCT].sym_identifier);
 	}
-	return ps;
+	// 返回新添加的符号
+	return new_symbol_ptr;
 }
 
 /***********************************************************
@@ -112,17 +126,19 @@ Symbol * sym_push(int token_code, Type * type, int storage_class, int related_va
  **********************************************************/
 Symbol * func_sym_push(int token_code, Type * type)
 {
-	Symbol *s, **ps;
-	s = sym_direct_push(global_sym_stack, token_code, type, 0);
+	Symbol *new_func_symbol, **tktable_member_pptr;
+	new_func_symbol = sym_direct_push(global_sym_stack, token_code, type, 0);
 	print_all_stack("sym_push global_sym_stack");
 	printf("tktable[%d].spelling = %s \n", token_code, tktable[token_code].spelling);
 	// ps = &((TkWord *)&tktable[v])->sym_identifier;
-	ps = &(tktable[token_code].sym_identifier);
-	while(*ps != NULL)
-		ps = &(* ps)->prev_tok;
-	s->prev_tok = NULL;
-	*ps = s;
-	return s;
+
+	tktable_member_pptr = &(tktable[token_code].sym_identifier);
+	// 在sym_identifier？？？上插入。
+	while(*tktable_member_pptr != NULL)
+		tktable_member_pptr = &(* tktable_member_pptr)->prev_tok;
+	new_func_symbol->prev_tok = NULL;
+	*tktable_member_pptr = new_func_symbol;
+	return new_func_symbol;
 }
 
 /***********************************************************

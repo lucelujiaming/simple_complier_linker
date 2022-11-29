@@ -6,10 +6,12 @@ extern Type int_type;			// int类型
 
 // 包裹函数。
 /************************************************************************/
-/*  功能：将栈顶操作数加载到'rc'类寄存器中。                            */
-/*        但是，如果这个栈顶操作数已经在寄存器中，则什么都不用做。      */
-/*  rc：  寄存器类型                                                    */
-/*  opd： 操作数指针                                                    */
+/*  功能：   将栈顶操作数加载到'rc'类寄存器中。                         */
+/*           但是，如果这个栈顶操作数已经在寄存器中，则什么都不用做。   */
+/*  rc：     寄存器类型                                                 */
+/*  opd：    操作数指针                                                 */
+/*  返回值： 如果栈顶操作数不在寄存器中，返回为其分配的空闲寄存器。     */
+/*           如果栈顶操作数已经在寄存器中，返回对应的空闲寄存器。       */
 /************************************************************************/
 int load_one(int rc, Operand * opd)
 {
@@ -19,13 +21,15 @@ int load_one(int rc, Operand * opd)
 	// 需要加载到寄存器中情况：
 	// 1.栈顶操作数目前尝未分配寄存器
 	// 2.栈顶操作数已分配寄存器，但为左值 *p
-	if (storage_class > SC_GLOBAL ||			// 不是全局变量。
+	if (storage_class > SC_GLOBAL ||			// 未分配寄存器。
 		(opd->storage_class & SC_LVAL))			// 为左值。
 	{
 		storage_class = allocate_reg(rc);		// 分配一个空闲的寄存器。
 		// 现在我们得到了寄存器，我们只需要将栈顶操作数加载到这个寄存器中。
 		load(storage_class, opd);
 	}
+	// 如果需要加载到寄存器，把存储类型修改为寄存器。
+	// 如果不需要加载到寄存器，
 	opd->storage_class = storage_class;
 	return storage_class;
 }
@@ -48,10 +52,11 @@ void load_two(int rc1, int rc2)
 /* 功能：将栈顶操作数存入次栈顶操作数中。                               */
 /*     也就是把栈里面的第零个元素存入第一个元素。                       */
 /*     这就是store_zero_to_one的含义。                                  */
+/*     也就是我们在代码中使用的赋值操作。                               */
 /*     通过阅读下面的例子，可以看出来栈顶保存的是右值。                 */
 /*     而次栈顶保存的是左值。这和我们的语法解析恰好也是对应的。         */
 /*     我们在处理赋值语句的时候，一定是先获得左值，之后压栈。           */
-/*     之后获得赋值等号，让自己进入最后获得右值。在                         */
+/*     之后获得赋值等号，让自己进入最后获得右值。                       */
 /************************************************************************/
 /* 一条形如 char a='a'; 的语句包括如下的指令。                          */
 /*  1. MOV EAX, 61                                                      */
@@ -80,21 +85,23 @@ void store_zero_to_one()
 {
 	// 根据上面的注释可以看出来，这个赋值操作包含两个部分：
 	// 一个是取出右值。一个是放入左值所在的内存空间。
-	int storage_class = 0,t = 0;
+	int right_storage_class = 0, left_storage_class = 0;
 	// 取出位于栈顶的右值，生成机器码。同时返回保存的寄存器。
-	storage_class = load_one(REG_ANY, operand_stack_top);
+	right_storage_class = load_one(REG_ANY, operand_stack_top);
+	
 	// 如果次栈顶操作数为寄存器溢出存放栈中。
+	// 也就是说，如果左值现在被溢出到栈中，必须再次把他加载到寄存器中。
 	if ((operand_stack_last_top->storage_class & SC_VALMASK) == SC_LLOCAL)
 	{
 		Operand opd;
-	//	t = allocate_reg(REG_ANY);
+		left_storage_class = allocate_reg(REG_ANY);
 		operand_assign(&opd, T_INT, SC_LOCAL | SC_LVAL, 
 			operand_stack_last_top->operand_value);
-		load(t, &opd);
-		operand_stack_last_top->storage_class = t | SC_LVAL;
+		load(left_storage_class, &opd);
+		operand_stack_last_top->storage_class = left_storage_class | SC_LVAL;
 	}
 	// 生成将寄存器'r'中的值存入操作数'opd'的机器码。
-	store(storage_class, operand_stack_last_top);
+	store(right_storage_class, operand_stack_last_top);
 	// 就交换栈顶操作数和次栈顶操作数。
 	operand_swap();
 	// 弹出上面交换过来的次栈顶操作数。和上面的操作结合等于删除次栈顶操作数。

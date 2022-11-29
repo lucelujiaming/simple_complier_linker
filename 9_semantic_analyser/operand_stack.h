@@ -7,9 +7,9 @@
 
 typedef struct Operand_t{
 	Type type;						// 数据类型
-	unsigned short storage_class;   // 寄存器或存储类型
+	unsigned short storage_class;   // 寄存器或存储类型 e_StorageClass
 	
-	int operand_value;				// 常量值。
+	int operand_value;				// 关联值。
 									// 如果这个变量的寄存器或存储类型是：
 	                                // 1. 立即数，那就是立即数本身。
 	                                // 2. 栈中变量，那就是栈内地址。

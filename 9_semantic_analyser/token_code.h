@@ -61,7 +61,7 @@ enum e_TokenCode
     KW_CDECL,		// __cdecl关键字 standard c call
 	KW_STDCALL,     // __stdcall关键字 pascal c call
 	
-	/* 标识符 */
+	/* 标识符 45 */
 	TK_IDENT,
 	/* 注释 */
 	TK_COMMENT,
