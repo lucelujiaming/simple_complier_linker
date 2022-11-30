@@ -29,6 +29,15 @@
 #define ONE_BYTE_OPCODE_IMME_GRP_TO_IMM8            0x83
 #define ONE_BYTE_OPCODE_IMME_GRP_TO_IMM32           0x81
 
+#define ONE_BYTE_OPCODE_IMME_GRP_TO_IMM32           0x81
+
+// 在这里加法时，opc是0。减法时，opc是5。比较时，opc是7。
+// 因此上，计算结果就是：加法时为0x01。减法时为0x29。比较时为0x39。
+// 查看Intel白皮书2517页的One-byte Opcode Map表。
+// 可以找到对应的指令，分别为ADD，SUB，CMP
+#define ONE_BYTE_OPCODE_LOW_THREE_BYTE_EV_GV        0x01
+ 
+ 
 // 参见Intel白皮书1161页的MOV的命令格式。
 //     0xB8表示是"Move imm32 to r32."。
 #define OPCODE_MOVE_IMM32_TO_R32  				    0xB8
@@ -49,6 +58,9 @@
 // 参考MOV的命令格式在Intel白皮书1161页可以发现：
 //     8B表示是"Move r/m32 to r32."。
 #define OPCODE_MOV_RM32_TO_R32                      0x8B
+// 参考MOV的命令格式在Intel白皮书1161页可以发现：
+//     89 /r表示是"Move r32 to r/m32."。
+#define OPCODE_MOVE_R32_TO_RM32                      0x89
 // 参考SETcc的命令格式在Intel白皮书1718页可以发现：
 //     0F 9F表示是"Set byte if greater (ZF=0 and SF=OF)."。
 #define OPCODE_Set_byte_if_greater_HIGH_BYTE        0x0F
@@ -60,4 +72,38 @@
 //     EB cb表示是"Jump short, RIP = RIP + 8-bit displacement sign 
 //                 extended to 64-bits."。
 #define OPCODE_JUMP_SHORT                           0xEB
+
+// 参考POP的命令格式在Intel白皮书1510页可以发现：
+//     58 + rd表示是"Pop top of stack into r32; increment stack pointer."。
+#define OPCODE_POP_STACK_TOP_INTO_R32               0x58
+	
+// 参考RET的命令格式在Intel白皮书1675页可以发现：
+//     C3表示是"Near return to calling procedure."。
+#define OPCODE_NEAR_RETURN                          0xC3
+#define OPCODE_NEAR_RETURN_AND_POP_IMM16_BYTES      0xC2
+// 参考PUSH的命令格式在Intel白皮书1633页可以发现：
+//     50+rd表示是"Push r32."。
+#define OPCODE_PUSH_R32                             0x50
+
+// 参考SUB的命令格式在Intel白皮书1776页可以发现：
+//     81 /5 id表示是"Subtract imm32 from r/m32."。
+#define OPCODE_SUBTRACT_IMM32_FROM_RM32             0x81
+
+// 参考CALL的命令格式在Intel白皮书695页可以发现：
+//     E8 cd表示是"Call near, relative, displacement relative to next instruction. "。
+#define OPCODE_CALL_NEAR_RELATIVE_32_BIT_DISPLACE   0xE8
+
+// 参考TEST的命令格式在Intel白皮书1801页可以发现：
+//     85 /r表示是" AND r32 with r/m32; set SF, ZF, PF according to result."。
+#define OPCODE_TEST_AND_R32_WITH_RM32               0x85
+
+// CMP影响位在Intel白皮书417页。
+// 也就是Table B-1. EFLAGS Condition Codes
+#define OPCODE_CONDITION_CODES_EQUAL                0x84
+#define OPCODE_CONDITION_CODES_NOT_EQUAL            0x85
+#define OPCODE_CONDITION_CODES_LESS                 0X8C
+#define OPCODE_CONDITION_CODES_LESS_OR_EQUAL        0X8E
+#define OPCODE_CONDITION_CODES_GREATER              0X8F
+#define OPCODE_CONDITION_CODES_GREATER_OR_EQUAL     0x8d
+
 #endif

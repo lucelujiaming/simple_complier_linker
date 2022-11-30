@@ -500,7 +500,8 @@ void gen_opTwoInteger(int reg_code, int op)
 		// 因此上，计算结果就是：加法时为0x01。减法时为0x29。比较时为0x39。
 		// 查看Intel白皮书2517页的One-byte Opcode Map表。
 		// 可以找到对应的指令，分别为ADD，SUB，CMP
-		gen_opcodeOne((one_byte_opcode << 3) | 0x01);
+		gen_opcodeOne((one_byte_opcode << 3)
+				| ONE_BYTE_OPCODE_LOW_THREE_BYTE_EV_GV); // 0x01);
 		// 根据操作数存储类型和目标操作数存储类型生成指令寻址方式字节。
 		gen_modrm(ADDR_REG, src_storage_class, dst_storage_class, NULL, 0);
 	}
@@ -513,22 +514,28 @@ void gen_opTwoInteger(int reg_code, int op)
 		operand_stack_top->storage_class = SC_CMP;
 		switch(op) {
 		case TK_EQ:
-			operand_stack_top->operand_value = 0x84;
+			operand_stack_top->operand_value
+				= OPCODE_CONDITION_CODES_EQUAL;           // 0x84;
 			break;
 		case TK_NEQ:
-			operand_stack_top->operand_value = 0x85;
+			operand_stack_top->operand_value
+				= OPCODE_CONDITION_CODES_NOT_EQUAL;       // 0x85;
 			break;
 		case TK_LT:
-			operand_stack_top->operand_value = 0x8c;
+			operand_stack_top->operand_value
+				= OPCODE_CONDITION_CODES_LESS;            // 0x8c;
 			break;
 		case TK_LEQ:
-			operand_stack_top->operand_value = 0x8e;
+			operand_stack_top->operand_value
+				= OPCODE_CONDITION_CODES_LESS_OR_EQUAL;   // 0x8e;
 			break;
 		case TK_GT:
-			operand_stack_top->operand_value = 0x8f;
+			operand_stack_top->operand_value
+				= OPCODE_CONDITION_CODES_GREATER;          // 0x8f;
 			break;
 		case TK_GEQ:
-			operand_stack_top->operand_value = 0x8d;
+			operand_stack_top->operand_value
+				= OPCODE_CONDITION_CODES_GREATER_OR_EQUAL; // 0x8d;
 			break;
 		}
 	}
@@ -638,8 +645,7 @@ int gen_jcc(int t)
 	}
 	else
 	{
-		// 如果栈顶元素不是符号，也就不是全局变量和函数定义，
-		// 而且如果也不是栈中变量。那就只能是常量。
+		// 如果栈顶元素是栈中变量。只需要JMP即可。
 		if (operand_stack_top->storage_class & 
 			(SC_VALMASK | SC_LVAL | SC_SYM) == SC_LOCAL)
 		{
@@ -648,9 +654,11 @@ int gen_jcc(int t)
 		else
 		{
 			v = load_one(REG_ANY, operand_stack_top);
+			// 参考TEST的命令格式在Intel白皮书1801页可以发现：
+			//     85 /r表示是"AND r32 with r/m32; set SF, ZF, PF according to result."。
 			// TEST--Logical Compare
 			// 85 /r	TEST r/m32,r32	AND r32 with r/m32,set SF,ZF,PF according to result		
-			gen_opcodeOne(0x85);
+			gen_opcodeOne(OPCODE_TEST_AND_R32_WITH_RM32); // 0x85);
 			gen_modrm(ADDR_REG, v, v, NULL, 0);
 
 			//  Jcc--Jump if Condition Is Met
@@ -732,28 +740,39 @@ void gen_prolog(Type *func_type)
 void gen_epilog()
 {
 	int v, saved_ind, opc;
+	// 参考MOV的命令格式在Intel白皮书1161页可以发现：
+	//     8B表示是"Move r/m32 to r32."。
 	// 8B /r	mov r32,r/m32	mov r/m32 to r32
-	gen_opcodeOne((char)0x8B);
+	gen_opcodeOne((char)OPCODE_MOV_RM32_TO_R32); // 0x8B);
 	/* 4. MOV ESP, EBP*/
 	gen_modrm(ADDR_REG, REG_ESP, REG_EBP, NULL, 0);
 
+	// 参考POP的命令格式在Intel白皮书1510页可以发现：
+	//     58 + rd表示是"Pop top of stack into r32; increment stack pointer."。
 	// POP--Pop a Value from the Stack
 	// 58+	rd		POP r32		
 	//    POP top of stack into r32; increment stack pointer
 	/* 5. POP EBP */
-	gen_opcodeOne(0x58 + REG_EBP);
+	gen_opcodeOne(OPCODE_POP_STACK_TOP_INTO_R32 // 0x58
+					+ REG_EBP);
+	// KW_CDECL
 	if (func_ret_sub == 0)
 	{
+		// 参考RET的命令格式在Intel白皮书1675页可以发现：
+		//     C3表示是"Near return to calling procedure."。
 		// 6. RET--Return from Procedure
 		// C3	RET	near return to calling procedure
-		gen_opcodeOne(0xC3);
+		gen_opcodeOne(OPCODE_NEAR_RETURN); // 0xC3);
 	}
+	// KW_STDCALL
 	else
 	{
+		// 参考RET的命令格式在Intel白皮书1675页可以发现：
+		//     C2 iw表示是"Near return to calling procedure and pop imm16 bytes from stack."。
 		// 6. RET--Return from Procedure
 		//    C2 iw	RET imm16	near return to calling procedure 
 		//                      and pop imm16 bytes form stack
-		gen_opcodeOne(0xC2);
+		gen_opcodeOne(OPCODE_NEAR_RETURN_AND_POP_IMM16_BYTES); // 0xC2);
 		gen_byte(func_ret_sub);
 		gen_byte(func_ret_sub >> 8);
 	}
@@ -762,19 +781,26 @@ void gen_epilog()
 	saved_ind = sec_text_opcode_ind;
 	sec_text_opcode_ind = func_begin_ind;
 
+	// 参考PUSH的命令格式在Intel白皮书1633页可以发现：
+	//     50+rd表示是"Push r32."。
 	// 1. PUSH--Push Word or Doubleword Onto the Stack
 	//    50+rd	PUSH r32	Push r32
-	gen_opcodeOne(0x50 + REG_EBP);
+	gen_opcodeOne(OPCODE_PUSH_R32 // 0x50
+						+ REG_EBP);
 
+	// 参考MOV的命令格式在Intel白皮书1161页可以发现：
+	//     89 /r表示是"Move r32 to r/m32."。
 	// 89 /r	MOV r/m32,r32	Move r32 to r/m32
 	// 2. MOV EBP, ESP
-	gen_opcodeOne(0x89);
+	gen_opcodeOne(OPCODE_MOVE_R32_TO_RM32); // 0x89);
 	gen_modrm(ADDR_REG, REG_ESP, REG_EBP, NULL, 0);
 
+	// 参考SUB的命令格式在Intel白皮书1776页可以发现：
+	//     81 /5 id表示是"Subtract imm32 from r/m32."。
 	//SUB--Subtract		81 /5 id	SUB r/m32,imm32	
 	//         Subtract sign-extended imm32 from r/m32
 	// 3. SUB ESP, stacksize
-	gen_opcodeOne(0x81);
+	gen_opcodeOne(OPCODE_SUBTRACT_IMM32_FROM_RM32); // 0x81);
 	opc = 5;
 	gen_modrm(ADDR_REG, opc, REG_ESP, NULL, 0);
 	gen_dword(v);
@@ -819,9 +845,12 @@ void gen_invoke(int nb_args)
 	{
 		r = load_one(REG_ANY, operand_stack_top);
 		size =4;
+		// 参考PUSH的命令格式在Intel白皮书1633页可以发现：
+		//     50+rd表示是"Push r32."。
 		// PUSH--Push Word or Doubleword Onto the Stack
 		// 50+rd	PUSH r32	Push r32
-		gen_opcodeOne(0x50 + r);
+		gen_opcodeOne(OPCODE_PUSH_R32 // 0x50
+						+ r);
 		args_size += size;
 		operand_pop();
 	}
@@ -846,12 +875,17 @@ void gen_call()
 	{
 		coffreloc_add(sec_text, operand_stack_top->sym, 
 			sec_text_opcode_ind + 1, IMAGE_REL_I386_REL32);
-		gen_opcodeOne(0xe8);
+			
+		// 参考CALL的命令格式在Intel白皮书695页可以发现：
+		//     E8 cd表示是"Call near, relative, displacement relative to next instruction. "。
+		gen_opcodeOne(OPCODE_CALL_NEAR_RELATIVE_32_BIT_DISPLACE); // 0xe8);
 		gen_dword(operand_stack_top->operand_value - 4);
 	}
 	else
 	{
 		r = load_one(REG_ANY, operand_stack_top);
+		// 参考CALL的命令格式在Intel白皮书695页可以发现：
+		//     FF /3表示是" Call far, absolute indirect address given in m16:16."。
 		gen_opcodeOne(0xff);
 		gen_opcodeOne(0xd0 + r);
 	}
