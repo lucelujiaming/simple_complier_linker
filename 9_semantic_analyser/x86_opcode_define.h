@@ -63,7 +63,8 @@
 #define OPCODE_MOVE_R32_TO_RM32                      0x89
 // 参考SETcc的命令格式在Intel白皮书1718页可以发现：
 //     0F 9F表示是"Set byte if greater (ZF=0 and SF=OF)."。
-#define OPCODE_Set_byte_if_greater_HIGH_BYTE        0x0F
+#define OPCODE_SET_BYTE_IF_GREATER_HIGH_BYTE        0x0F
+
 // 参考JMP的命令格式在Intel白皮书1064页可以发现：
 //     E9 cd表示是"Jump near, relative, RIP = RIP + 32-bit 
 //                 displacement sign extended to 64-bits."。
@@ -72,6 +73,10 @@
 //     EB cb表示是"Jump short, RIP = RIP + 8-bit displacement sign 
 //                 extended to 64-bits."。
 #define OPCODE_JUMP_SHORT                           0xEB
+// 参考Jcc的命令格式在Intel白皮书1060页可以发现：
+//     0F 8F cw/cd 表示是"Jump near if greater (ZF=0 and SF=OF)."。
+#define OPCODE_JCC_JUMP_NEAR_IF_GREATER             0x0f
+
 
 // 参考POP的命令格式在Intel白皮书1510页可以发现：
 //     58 + rd表示是"Pop top of stack into r32; increment stack pointer."。
@@ -92,6 +97,8 @@
 // 参考CALL的命令格式在Intel白皮书695页可以发现：
 //     E8 cd表示是"Call near, relative, displacement relative to next instruction. "。
 #define OPCODE_CALL_NEAR_RELATIVE_32_BIT_DISPLACE   0xE8
+#define OPCODE_CALL_NEAR_ABSOLUTE                   0XFF
+#define OPCODE_CALL_NEAR_ABSOLUTE_32_RM32_ADDRESS   0xd0
 
 // 参考TEST的命令格式在Intel白皮书1801页可以发现：
 //     85 /r表示是" AND r32 with r/m32; set SF, ZF, PF according to result."。

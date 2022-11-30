@@ -686,7 +686,7 @@ void if_statement(int *bsym, int *csym)
 /*  3. MOV EAX, DWORD PTR SS：[EBP-4]                                   */
 /*  4. CMP EAX, 0A                                                      */
 /*  5. JGE scc_anal.0040128D                                            */
-/*  6. JMP scc_anal. 00401276                                           */
+/*  6. JMP scc_anal.00401276                                            */
 /* 操作步骤如下：                                                       */
 /*  3 & 4. 把变量和10进行比较。                                         */
 /*  5. 如果比10大，就跳转到整个for语句体的结尾。                        */
@@ -1456,7 +1456,7 @@ void postfix_expression()
 /* 一条形如 printf(g_str1); 的语句包括如下的指令。                      */
 /*    MOV  EAX,  scc_anal.00402008; ASCII“g_strl"                       */
 /*    PUSH EAX                                                          */
-/*    CALL <JMP.&ms vert.printf>                                        */
+/*    CALL <JMP.&msvert.printf>                                         */
 /*    ADD  ESP, 4                                                       */
 /* 一条形如 printf(printf(g_str2);); 的语句包括如下的指令。             */
 /*    MOV  EAX, DWORD PTR: [402010]: scc_anal.0040300E                  */
@@ -1466,12 +1466,12 @@ void postfix_expression()
 /* 一条形如 printf(str1); 的语句包括如下的指令。                        */
 /*    LEA  EAX, DWORD PTR SS: [EBP-9]                                   */
 /*    PUSH EAX                                                          */
-/*    CALL <JMP.&ms vert.printf>                                        */
+/*    CALL <JMP.&msvert.printf>                                         */
 /*    ADD ESP. 4                                                        */
 /* 一条形如 printf(str2); 的语句包括如下的指令。                        */
 /*    MOV  EAX,  DWORD PTR SS: [EBP-C]                                  */
 /*    PUSH EAX                                                          */
-/*    CALL <JMP.&ms vert.printf>                                        */
+/*    CALL <JMP.&msvert.printf>                                         */
 /*    ADD ESP,  4                                                       */
 /************************************************************************/
 void primary_expression()
@@ -1579,8 +1579,8 @@ void primary_expression()
 /*    }                                                                 */
 /* 函数包括如下的指令。                                                 */
 /*    1. PUSH EBP                                                       */
-/*    2. MOVE BP.ESP                                                    */
-/*    3. SUB ESP. 0                                                     */
+/*    2. MOVE BP, ESP                                                   */
+/*    3. SUB ESP, 0                                                     */
 /*    4. MOV EAX,  DWORD PTR SS: [EBP+C]                                */
 /*    5. MOV ECX,  DWORD PTR SS: [EBP+8]                                */
 /*    6. ADD ECX,  EAX                                                  */
@@ -1601,7 +1601,7 @@ void primary_expression()
 /* 一条形如 printf("Hello"); 的语句包括如下的指令。                     */
 /*    MOV  EAX, scc_anal.00403008; ASCII"Hello"                         */
 /*    PUSH EAX                                                          */
-/*    CALL<JMP.&msvcrt.printf>                                          */
+/*    CALL <JMP.&msvcrt.printf>                                         */
 /*    ADD ESP,  4                                                       */
 /************************************************************************/
 void argument_expression_list()

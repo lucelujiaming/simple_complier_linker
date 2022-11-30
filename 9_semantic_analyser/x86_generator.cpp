@@ -228,7 +228,8 @@ void load(int storage_class, Operand * opd)
 			// SETcc--Set Byte on Condition
 			// OF 9F			SETG r/m8	Set byte if greater(ZF=0 and SF=OF)
 			// 0F 8F cw/cd		JG rel16/32	jump near if greater(ZF=0 and SF=OF)
-			gen_opcodeTwo(0x0f, fc + 16);
+			gen_opcodeTwo(OPCODE_SET_BYTE_IF_GREATER_HIGH_BYTE // 0x0f
+						, fc + 16);
 			gen_modrm(ADDR_REG, 0, storage_class, NULL, 0);
 		}
 		else if (v != storage_class)
@@ -636,11 +637,14 @@ int gen_jcc(int t)
 	// 如果前一句是CMP。这里要生成JLE或者JGE。
 	if (v == SC_CMP)
 	{
+		// 参考Jcc的命令格式在Intel白皮书1060页可以发现：
+		//     0F 8F cw/cd 表示是"Jump near if greater (ZF=0 and SF=OF)."。
 		// Jcc--Jump if Condition Is Met
 		// .....
 		// 0F 8F cw/cd		JG rel16/32	jump near if greater(ZF=0 and SF=OF)
 		// .....
-		gen_opcodeTwo(0x0f, operand_stack_top->operand_value ^ inv);
+		gen_opcodeTwo(OPCODE_JCC_JUMP_NEAR_IF_GREATER // 0x0f
+				, operand_stack_top->operand_value ^ inv);
 		t = makelist(t);
 	}
 	else
@@ -660,12 +664,15 @@ int gen_jcc(int t)
 			// 85 /r	TEST r/m32,r32	AND r32 with r/m32,set SF,ZF,PF according to result		
 			gen_opcodeOne(OPCODE_TEST_AND_R32_WITH_RM32); // 0x85);
 			gen_modrm(ADDR_REG, v, v, NULL, 0);
-
+			
+			// 参考Jcc的命令格式在Intel白皮书1060页可以发现：
+			//	   0F 8F cw/cd 表示是"Jump near if greater (ZF=0 and SF=OF)."。
 			//  Jcc--Jump if Condition Is Met
 			// .....
 			// 0F 8F cw/cd		JG rel16/32	jump near if greater(ZF=0 and SF=OF)
 			// .....
-			gen_opcodeTwo(0x0f, 0x85 ^ inv);
+			gen_opcodeTwo(OPCODE_JCC_JUMP_NEAR_IF_GREATER // 0x0f
+							, 0x85 ^ inv);
 			t = makelist(t);
 		}
 	}
@@ -873,11 +880,14 @@ void gen_call()
 	int r;
 	if (operand_stack_top->storage_class & (SC_VALMASK | SC_LVAL) == SC_GLOBAL)
 	{
+		// 记录重定位信息
 		coffreloc_add(sec_text, operand_stack_top->sym, 
 			sec_text_opcode_ind + 1, IMAGE_REL_I386_REL32);
 			
 		// 参考CALL的命令格式在Intel白皮书695页可以发现：
 		//     E8 cd表示是"Call near, relative, displacement relative to next instruction. "。
+		//	CALL--Call Procedure E8 cd   
+		//	CALL rel32    call near,relative,displacement relative to next instrution
 		gen_opcodeOne(OPCODE_CALL_NEAR_RELATIVE_32_BIT_DISPLACE); // 0xe8);
 		gen_dword(operand_stack_top->operand_value - 4);
 	}
@@ -885,9 +895,11 @@ void gen_call()
 	{
 		r = load_one(REG_ANY, operand_stack_top);
 		// 参考CALL的命令格式在Intel白皮书695页可以发现：
-		//     FF /3表示是" Call far, absolute indirect address given in m16:16."。
-		gen_opcodeOne(0xff);
-		gen_opcodeOne(0xd0 + r);
+		//     FF /2表示是" Call near, absolute indirect, address given in r/m32."。
+        // FF /2 CALL r/m32 Call near, absolute indirect, address given in r/m32
+		gen_opcodeOne(OPCODE_CALL_NEAR_ABSOLUTE); // 0xff);
+		gen_opcodeOne(OPCODE_CALL_NEAR_ABSOLUTE_32_RM32_ADDRESS // 0xd0
+						+ r);
 	}
 }
 
