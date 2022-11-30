@@ -18,6 +18,7 @@ Section *sec_text,			// 代码节
 int nsec_image;				// 映像文件节个数
 
 extern std::vector<TkWord> tktable;
+extern int sec_text_opcode_ind ;	 	// 指令在代码节位置
 
 void section_realloc(Section * sec, int new_size);
 int coffsym_search(Section * symtab, char * name);
@@ -302,6 +303,54 @@ void coffreloc_redirect_add(int offset, int cfsym, char section, char type)
 	rel->type    = type;
 }
 
+/************************************************************************/
+/* 功能：    记录待定跳转地址的指令链                                   */
+/* jmp_addr：前一跳转指令地址                                           */
+/*           0x00 - 待填充的跳转指令地址。                              */
+/*		     0xXX - break跳转位置或者continue跳转位置。                 */
+/************************************************************************/
+int makelist(int jmp_addr)
+{
+	int indNew;
+	// 根据指令在代码节位置加4来计算下一个指令的位置。
+	indNew = sec_text_opcode_ind + 4;
+	// 如果发现溢出，使用新大小从新分配代码节。
+	if (indNew > sec_text->data_allocated)
+	{
+		section_realloc(sec_text, indNew);
+	}
+	// 把前一跳转指令地址写入代码节位置。
+	// 这个值在if和for的时候为零。而在break, continue, return的时候非零。
+	*(int *)(sec_text->data + sec_text_opcode_ind) = jmp_addr;
+	// 返回值为代码节位置。这句话其实没啥作用。
+	jmp_addr = sec_text_opcode_ind;
+	// 更新代码节位置。指向下一条指令。
+	sec_text_opcode_ind = indNew;
+	// 返回值为代码节位置。
+	return jmp_addr;
+}
+
+/************************************************************************/
+/* 功能：       回填函数，把t为链首的各个待定跳转地址填入相对地址       */
+/* fill_offset：链首。我认为是需要填充的代码节偏移位置                  */
+/* jmp_addr：   指令跳转位置。                                          */
+/************************************************************************/
+void backpatch(int fill_offset, int jmp_addr)
+{
+	int next_addr, *ptrSecText;
+	// 如果需要填充的代码节偏移位置不为零。
+	while (fill_offset)
+	{
+		// ptr指向代码节偏移位置
+		ptrSecText = (int *)(sec_text->data + fill_offset);
+		// 记住下一个需要回填位置
+		next_addr = *ptrSecText;
+		// 填入相对地址
+		*ptrSecText = jmp_addr - fill_offset - 4;
+		// 准备处理下一个需要回填位置
+		fill_offset = next_addr ;
+	}
+}
 
 /***********************************************************
  * *功能:            COFF初始化

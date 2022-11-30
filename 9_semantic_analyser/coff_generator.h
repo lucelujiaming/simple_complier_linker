@@ -66,4 +66,6 @@ void init_coff();
 void write_obj(char * name);
 void free_sections();
 
+int makelist(int s);
+void backpatch(int t, int a);
 #endif

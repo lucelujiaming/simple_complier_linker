@@ -50,6 +50,7 @@ void break_statement(int *bsym);
 void return_statement();
 void continue_statement(int *csym);
 void for_statement(int *bsym, int *csym);
+void while_statement(int *bsym, int *csym);
 void expression_statement();
 
 void expression();
@@ -509,19 +510,19 @@ void init_variable(Type * type, Section * sec, int c) // , int v)
 }
 
 // ------------------ 语句：statement
-/***********************************************************
- * 功能:	解析语句
- * bsym:	break跳转位置。暂时没有用。
- * csym:	continue跳转位置。暂时没有用。
- *
- * <statement>::=<compound_statement>    
- *             | <if_statement>          
- *             | <return_statement>      
- *             | <break_statement>       
- *             | <continue_statement>    
- *             | <for_statement>         
- *             | <expression_statement>  
- **********************************************************/
+/************************************************************************/
+/* 功能:	解析语句                                                    */
+/* bsym:	break跳转位置。暂时没有用。                                 */
+/* csym:	continue跳转位置。暂时没有用。                              */
+/*                                                                      */
+/* <statement>::=<compound_statement>                                   */
+/*             | <if_statement>                                         */
+/*             | <return_statement>                                     */
+/*             | <break_statement>                                      */
+/*             | <continue_statement>                                   */
+/*             | <for_statement>                                        */
+/*             | <expression_statement>                                 */
+/************************************************************************/
 void statement(int *bsym, int *csym)
 {
 	switch(get_current_token_type())
@@ -544,15 +545,20 @@ void statement(int *bsym, int *csym)
 	case KW_FOR:
 		for_statement(bsym, csym);
 		break;
+	case KW_WHILE:
+		while_statement(bsym, csym);
+		break;
 	default:
 		expression_statement();
 		break;
 	}
 }
 
-/***********************************************************
- * <compound_statement> ::= <TK_BEGIN>{<declaration>} {<statement>} <TK_END>
- **********************************************************/
+/************************************************************************/
+/* <compound_statement> ::= <TK_BEGIN>                                  */
+/*                             {<declaration>} {<statement>}            */
+/*                          <TK_END>                                    */
+/************************************************************************/
 int is_type_specifier(int token_type)
 {
 	switch(token_type)
@@ -569,6 +575,15 @@ int is_type_specifier(int token_type)
 	return 0;
 }
 
+/************************************************************************/
+/* 功能:	解析复合语句                                                */
+/* bsym:	break跳转位置                                               */
+/* csym:	continue跳转位置                                            */
+/*                                                                      */
+/* <compound_statement>::=<TK_BEGIN>                                    */
+/*                           {<declaration>}{<statement>}               */
+/*                        <TK_END>                                      */
+/************************************************************************/
 void compound_statement(int * bsym, int * csym)
 {
 	Symbol *s;
@@ -602,10 +617,10 @@ void compound_statement(int * bsym, int * csym)
 	get_token();
 }
 
-/***********************************************************
- * <expression_statement> ::= <TK_SEMICOLON>|<expression><TK_SEMICOLON>
- *   TK_SEMICOLON 是 ; 分号
- **********************************************************/
+/************************************************************************/
+/* <expression_statement> ::= <TK_SEMICOLON>|<expression><TK_SEMICOLON> */
+/*   TK_SEMICOLON 是 ; 分号                                             */
+/************************************************************************/
 void expression_statement()
 {
 	if(get_current_token_type() != TK_SEMICOLON)
@@ -624,7 +639,7 @@ void expression_statement()
 /*          <TK_CLOSEPA><statement>[<KW_ELSE><statement>]               */
 /************************************************************************/
 /* 一条形如 if(a > b) 语句包括四条指令。                                */
-/*   MOV EAX, DWORD PTR SS: [EBP-8]                                    */
+/*   MOV EAX, DWORD PTR SS: [EBP-8]                                     */
 /*   MOV ECX, DWORD PTR SS: [EBP-4]                                     */
 /*   CMP ECX, EAX                                                       */
 /*   JLE scc_anal.0040123F                                              */
@@ -782,37 +797,50 @@ void for_statement(int *bsym, int *csym)
 		skip_token(TK_CLOSEPA);
 	}
 	// Deal with the body of for_statement 
-	statement(bsym, csym); 
+	// 只有此处用到break,及continue,一个循环中可能有多个break,或多个continue,故需要拉链以备反填
+	statement(&for_end_address, &for_inc_address); 
 	// 循环体处理完了以后，跳转到循环头累加的地方。
 	// 例如：18. JMP  SHORT scc_anal.0040126B
 	gen_jmpbackward(for_inc_address);
 	// 执行到了这里，我们可以填充循环体的结束地址了。
 	backpatch(for_end_address, sec_text_opcode_ind);
 	// 这句话好像是多余的。因为b一直是零。而且如果传入0，backpatch什么都不会做。
-	// backpatch(b, for_inc_address);
+	// backpatch(for_inc_address, for_exit_cond_address);
 }
 
-/***********************************************************
- *  <while_statement> ::= <KW_WHILE><TK_OPENPA><expression><TK_CLOSEPA><statement>
- **********************************************************/
+/************************************************************************/
+/*  <while_statement> ::= <KW_WHILE>                                    */
+/*                             <TK_OPENPA><expression><TK_CLOSEPA>      */
+/*                             <statement>                              */
+/************************************************************************/
 void while_statement(int *bsym, int *csym)
 {
+	int while_end_address, while_exit_cond_address;
 	get_token();
 	skip_token(TK_OPENPA);
+	// 现在我们位于while语句的左括号位置。首先记录下while循环退出条件的位置。
+	while_exit_cond_address = sec_text_opcode_ind;
+	// 初始化循环体结束位置。
+	while_end_address = 0;
 	// Chapter I
 	expression();
+	// 生成循环头的退出的跳转语句。例如：5. JGE scc_anal.0040128D
+	// 跳转地址在处理完for语句以后回填。
+	while_end_address = gen_jcc(0);
 	skip_token(TK_CLOSEPA);
-	
-	// 为WHILE语句生成条件跳转指令。
-	// if_jmp = gen_jcc(0);
+	// 这里不需要生成循环头的不退出的跳转语句。因为后面就是循环体。
+	// while_body_address = gen_jmpforward(0);
 
 	syntax_state = SNTX_LF_HT;
 	// Deal with the body of while_statement 
-	statement(bsym, csym); 
+	statement(&while_end_address, &while_exit_cond_address); 
 	
 	// 循环体处理完了以后，跳转到循环头。
 	// 例如：18. JMP  SHORT scc_anal.0040126B
-	// gen_jmpbackward(for_inc_address);
+	gen_jmpbackward(while_exit_cond_address);
+	// 循环体处理完了以后，跳转到循环头。
+	// 执行到了这里，我们可以填充循环体的结束地址了。
+	backpatch(while_end_address, sec_text_opcode_ind);
 }
 
 /************************************************************************/
