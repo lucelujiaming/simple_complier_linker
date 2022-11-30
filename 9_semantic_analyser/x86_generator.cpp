@@ -459,8 +459,9 @@ void gen_opTwoInteger(int reg_code, int op)
 {
 	int dst_storage_class, src_storage_class, c;
 	// 如果栈顶元素不是符号，也就不是全局变量和函数定义，
-	// 而且如果也不是栈中变量。那就只能是常量。
-	if ((operand_stack_top->storage_class & (SC_VALMASK | SC_LOCAL | SC_SYM)) == SC_GLOBAL)
+	// 而且如果也不是左值。那就只能是常量。
+	if ((operand_stack_top->storage_class & 
+		(SC_VALMASK | SC_LVAL | SC_SYM)) == SC_GLOBAL)
 	{
 		dst_storage_class = load_one(REG_ANY, operand_stack_last_top);
 		// 如果c是一个8位立即数。
@@ -590,19 +591,25 @@ void gen_jmpbackward(int a)
 }
 
 /************************************************************************/
-/* 功能：  生成条件跳转指令                                             */
-/* t：     前一跳转指令地址                                             */
-/* 返回值：由makelist生成的新跳转指令地址。                             */
-/*         gen_jmpforward也调用了makelist并返回。                       */
+/* 功能：    生成条件跳转指令                                           */
+/* jmp_addr：前一跳转指令地址                                           */
+/* 返回值：  由makelist生成的新跳转指令地址。                           */
+/*           gen_jmpforward也调用了makelist并返回。                     */
 /************************************************************************/
-int gen_jcc(int t)
+int gen_jcc(int jmp_addr)
 {
-	int v;
-	int inv = 1;
-	v = operand_stack_top->storage_class & SC_VALMASK;
+	int storage_class;
+	// 参考Jcc的命令格式在Intel白皮书1060页可以发现：
+	// 当ZF=1时，最低位会改变
+	int inv = 1;  // if 0 (ZF=1)
+	storage_class = operand_stack_top->storage_class & SC_VALMASK;
 	// 如果前一句是CMP。这里要生成JLE或者JGE。
-	if (v == SC_CMP)
+	// 这里处理的是条件表达式的正常写法：
+	//     if (a > b)
+	if (storage_class == SC_CMP)
 	{
+		// 当storage_class为SC_CMP的时候，operand_value为对应的CMP影响位。
+		// 参见在Intel白皮书417页。也就是Table B-1. EFLAGS Condition Codes
 		// 参考Jcc的命令格式在Intel白皮书1060页可以发现：
 		//     0F 8F cw/cd 表示是"Jump near if greater (ZF=0 and SF=OF)."。
 		// Jcc--Jump if Condition Is Met
@@ -611,39 +618,49 @@ int gen_jcc(int t)
 		// .....
 		gen_opcodeTwo(OPCODE_JCC_JUMP_NEAR_IF_GREATER // 0x0f
 				, operand_stack_top->operand_value ^ inv);
-		t = makelist(t);
+		jmp_addr = makelist(jmp_addr);
 	}
 	else
 	{
-		// 如果栈顶元素是栈中变量。只需要JMP即可。
+		// 如果栈顶元素不是符号，也就不是全局变量和函数定义，
+		// 而且如果也不是左值。那就只能是常量。
+		// 也就是这种神奇的情况，就是会有人这么写代码：
+		//     if (1)
+		// 因此只需要直接JMP即可。
 		if (operand_stack_top->storage_class & 
-			(SC_VALMASK | SC_LVAL | SC_SYM) == SC_LOCAL)
+			(SC_VALMASK | SC_LVAL | SC_SYM) == SC_GLOBAL)
 		{
-			t = gen_jmpforward(t);
+			jmp_addr = gen_jmpforward(jmp_addr);
 		}
+		// 这里处理了另一种神奇的情况，就是会有人这么写代码：
+		//     if (a = 7)
+		// 也就是这种情况下，if后面的表达式不是一个比较操作。而是一个计算操作。
 		else
 		{
-			v = load_one(REG_ANY, operand_stack_top);
+			storage_class = load_one(REG_ANY, operand_stack_top);
 			// 参考TEST的命令格式在Intel白皮书1801页可以发现：
 			//     85 /r表示是"AND r32 with r/m32; set SF, ZF, PF according to result."。
+			// TEST指令跟CMP指令相似，运算结果只改变相应的标志寄存器的位，不把值保存到第一个操作数中。
+			// 例如：test ecx，ecx。指令这条指令只有ecx中的值为0时，标志寄存器ZF位才能为0。
 			// TEST--Logical Compare
 			// 85 /r	TEST r/m32,r32	AND r32 with r/m32,set SF,ZF,PF according to result		
 			gen_opcodeOne(OPCODE_TEST_AND_R32_WITH_RM32); // 0x85);
-			gen_modrm(ADDR_REG, v, v, NULL, 0);
+			gen_modrm(ADDR_REG, storage_class, storage_class, NULL, 0);
 			
 			// 参考Jcc的命令格式在Intel白皮书1060页可以发现：
 			//	   0F 8F cw/cd 表示是"Jump near if greater (ZF=0 and SF=OF)."。
+			// 也就是根据标志寄存器ZF位进行跳转。
 			//  Jcc--Jump if Condition Is Met
 			// .....
 			// 0F 8F cw/cd		JG rel16/32	jump near if greater(ZF=0 and SF=OF)
 			// .....
 			gen_opcodeTwo(OPCODE_JCC_JUMP_NEAR_IF_GREATER // 0x0f
 							, 0x85 ^ inv);
-			t = makelist(t);
+			jmp_addr = makelist(jmp_addr);
 		}
 	}
 	operand_pop();
-	return t;
+	return jmp_addr;
 }
 
 /***********************************************************
