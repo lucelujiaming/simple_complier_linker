@@ -29,7 +29,7 @@ int load_one(int rc, Operand * opd)
 		load(storage_class, opd);
 	}
 	// 如果需要加载到寄存器，把存储类型修改为寄存器。
-	// 如果不需要加载到寄存器，
+	// 如果不需要加载到寄存器，我们会清除扩展类型。
 	opd->storage_class = storage_class;
 	return storage_class;
 }
@@ -100,7 +100,7 @@ void store_zero_to_one()
 		load(left_storage_class, &opd);
 		operand_stack_last_top->storage_class = left_storage_class | SC_LVAL;
 	}
-	// 生成将寄存器'r'中的值存入操作数'opd'的机器码。
+	// 生成将寄存器right_storage_class中的值存入操作数operand_stack_last_top的机器码。
 	store(right_storage_class, operand_stack_last_top);
 	// 就交换栈顶操作数和次栈顶操作数。
 	operand_swap();

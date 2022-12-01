@@ -2,7 +2,7 @@
 
 #define OPERAND_STACK_SIZE    1024
 
-extern std::vector<Operand> operand_stack;
+std::vector<Operand> operand_stack;
 std::vector<Operand>::iterator operand_stack_top = NULL;
 std::vector<Operand>::iterator operand_stack_last_top = NULL;
 
@@ -25,6 +25,10 @@ void operand_push(Type* type, int storage_class, int operand_value)
 	operand_stack_top->type             = *type;
 	operand_stack_top->storage_class    = storage_class;
 	operand_stack_top->operand_value    = operand_value;
+	if (get_current_token())
+	{
+		strcpy(operand_stack_top->token_str, get_current_token());
+	}
 }
 
 /************************************************************************/

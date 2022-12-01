@@ -564,13 +564,20 @@ int gen_jmpforward(int t)
 
 /************************************************************************/
 /* 功能：生成向低地址跳转指令，跳转地址已确定                           */
-/* a：跳转到的目标地址                                                  */
+/* target_address：跳转到的目标地址                                     */
 /************************************************************************/
-void gen_jmpbackward(int a)
+#define  OPCODE_SIZE_JMP         2
+void gen_jmpbackward(int target_address)
 {
-	int r;
-	r = a - sec_text_opcode_ind - 1;
-	if (r = (char)r)
+	int displacement;
+	// displacement - 偏移量。这里可以理解为相对地址。
+	// 这个偏移量的计算方法如下：
+	// 首先假设指令在代码节的偏移量为51，也就是sec_text_opcode_ind = 51。
+	// 我想跳转到偏移量28上面，也就是target_address = 28。
+	// 我们需要将两个值相减。同时我们还需要减去JMP指令的机器码本身的大小。
+	displacement = target_address - sec_text_opcode_ind - OPCODE_SIZE_JMP;
+	// 8位转移是短转移。短跳转范围是-128-127。
+	if (displacement = (char)displacement)
 	{
 		// 参考JMP的命令格式在Intel白皮书1064页可以发现：
 		//     EB cb表示是"Jump short, RIP = RIP + 8-bit displacement sign 
@@ -578,8 +585,10 @@ void gen_jmpbackward(int a)
 		// EB cb	JMP rel8	
 		// Jump short,relative,displacement relative to next instruction
 		gen_opcodeOne(OPCODE_JUMP_SHORT); //(0xeb);
-		gen_byte(r);
+		// 8-bit displacement
+		gen_byte(displacement);
 	}
+	// 否则是32位转移 - 远转移
 	else
 	{
 		// 参考JMP的命令格式在Intel白皮书1064页可以发现：
@@ -588,7 +597,8 @@ void gen_jmpbackward(int a)
 		// E9 cd	JMP rel32	
 		// Jump short,relative,displacement relative to next instruction
 		gen_opcodeOne(OPCODE_JUMP_NEAR); //(0xe9);
-		gen_dword(a - sec_text_opcode_ind - 4);
+		// 偏移量 - 32-bit displacement
+		gen_dword(target_address - sec_text_opcode_ind - 4);
 	}
 }
 

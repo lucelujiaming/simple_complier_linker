@@ -13,40 +13,52 @@ extern Type char_pointer_type,		// 字符串指针
 /* 功能：寄存器分配，如果所需寄存器被占用，先将其内容溢出到栈中         */
 /* rc：寄存器类型                                                       */
 /************************************************************************/
-int allocate_reg(int rc)
+#define REG_NOT_USED    0
+#define REG_USED        1
+int allocate_reg(int reqire_reg)
 {
-	int storage_class;
+	int reg_index = 0;
 	std::vector<Operand>::iterator p;
 	int used;
 
     /* 查找空闲的寄存器 */
-	for (storage_class = 0; storage_class <= REG_EBX; storage_class++)
+	// 查找四个基础寄存器。
+	for (reg_index = REG_EAX; reg_index <= REG_EBX; reg_index++)
 	{
-		if (rc & REG_ANY || storage_class == rc) 
+		// 如果可以分配任意一个，或者指定了基础寄存器。
+		if (reqire_reg & REG_ANY || reg_index == reqire_reg) 
 		{
-			used = 0;
+			// 首先假设没有被使用。
+			used = REG_NOT_USED;
+			// 查找操作数栈
 			for (p = operand_stack.begin(); p != operand_stack_top; p++)
 			{
-				if ((p->storage_class & SC_VALMASK) == storage_class)
+				// 如果发现该寄存器已经使用。
+				if ((p->storage_class & SC_VALMASK) == reg_index)
 				{
-					used = 1;
+					used = REG_USED;
 				}
 			}
-			if (used == 0)
+			// 如果寄存器没有使用。直接返回。
+			if (used == REG_NOT_USED)
 			{
-				return storage_class;
+				return reg_index;
 			}
 		}
 	}
 
-    // 如果没有空闲的寄存器，从操作数栈底开始查找到第一个占用的寄存器举出到栈中
+    // 如果没有空闲的寄存器，从操作数栈底开始查找到第一个占用的寄存器，
+	// 也就是最早被使用的寄存器。举出到栈中。
 	for (p = operand_stack.begin(); p != operand_stack_top; p++)
 	{
-		storage_class = p->storage_class & SC_VALMASK;
-		if (storage_class < SC_GLOBAL && (rc & REG_ANY || storage_class == rc))
+		// 获得寄存器或存储类型。
+		reg_index = p->storage_class & SC_VALMASK;
+		if (reg_index < SC_GLOBAL &&			// 如果是寄存器 
+			(reqire_reg & REG_ANY 
+				|| reg_index == reqire_reg))	// 而且符合请求的寄存器类型 
 		{
-			spill_reg(storage_class);
-			return storage_class;
+			spill_reg(reg_index);
+			return reg_index;
 		}
 	}
     /* 此处永远不可能到达 */
@@ -54,40 +66,51 @@ int allocate_reg(int rc)
 }
 
 /************************************************************************/
-/* 功能：将寄存器'r'溢出到内存栈中，                                    */
-/*       并且标记释放'r'寄存器的操作数为局部变量                        */
-/* r：寄存器编码                                                        */
+/* 功能：     将寄存器'reg_index'溢出到内存栈中，                       */
+/*            并且标记释放'reg_index'寄存器的操作数为局部变量。         */
+/* reg_index：寄存器编码                                                */
 /************************************************************************/
-void spill_reg(char storage_class)
+void spill_reg(char reg_index)
 {
 	int size, align;
 	std::vector<Operand>::iterator p;
 	Operand opd;
 	Type * type;
-
+	// 从操作数栈底开始查找到栈顶。
 	for (p = operand_stack.begin(); p != operand_stack_top; p++)
 	{
-		if ((p->storage_class & SC_VALMASK) == storage_class)
+		// 找到第一个占用的寄存器。
+		if ((p->storage_class & SC_VALMASK) == reg_index)
 		{
-			storage_class = p->storage_class & SC_VALMASK;
+			// 这一步好像多余了。
+			reg_index = p->storage_class & SC_VALMASK;
+			// 取出占用寄存器的数据类型。
 			type = &p->type;
+			// 左值都是整数类型。
 			if (p->storage_class & SC_LVAL)
 			{
 				type = &int_type;
 			}
+			// 计算类型大小。
 			size = type_size(type, &align);
+			// 计算局部变量在栈中位置。
 			function_stack_loc = calc_align(function_stack_loc - size, align);
+			// 给opd赋值。
 			operand_assign(&opd, type->type, SC_LOCAL | SC_LVAL, function_stack_loc);
-			store(storage_class, &opd);
+			// 举出到栈中。将寄存器'reg_index'中的值存入操作数'opd'。
+			store(reg_index, &opd);
+			// 如果是左值。
 			if (p->storage_class & SC_LVAL)
 			{
-			    // 标识操作数放在栈中
+			    // 标识操作数放在栈中。清除低8位标志的基本类型。保留所有的扩展类型。
+				// 基本类型设置为SC_LLOCAL标志，表明寄存器溢出存放栈中。
 				p->storage_class = (p->storage_class & ~(SC_VALMASK)) | SC_LLOCAL;
 			}
 			else
 			{
 				p->storage_class = SC_LOCAL | SC_LVAL;
 			}
+			// 关联值设定为局部变量在栈中位置。
 			p->operand_value = function_stack_loc;
 			break;
 		}
@@ -99,14 +122,14 @@ void spill_reg(char storage_class)
 /************************************************************************/
 void spill_regs()
 {
-	int r;
+	int reg_idx;
 	std::vector<Operand>::iterator p;
 	for (p = operand_stack.begin(); p != operand_stack_top; p++)
 	{
-		r = p->storage_class & SC_VALMASK;
-		if (r < SC_GLOBAL)
+		reg_idx = p->storage_class & SC_VALMASK;
+		if (reg_idx < SC_GLOBAL)
 		{
-			spill_reg(r);
+			spill_reg(reg_idx);
 		}
 	}
 }

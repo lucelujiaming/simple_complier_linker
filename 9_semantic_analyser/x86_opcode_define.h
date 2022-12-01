@@ -60,7 +60,7 @@
 #define OPCODE_MOV_RM32_TO_R32                      0x8B
 // 参考MOV的命令格式在Intel白皮书1161页可以发现：
 //     89 /r表示是"Move r32 to r/m32."。
-#define OPCODE_MOVE_R32_TO_RM32                      0x89
+#define OPCODE_MOVE_R32_TO_RM32                     0x89
 // 参考SETcc的命令格式在Intel白皮书1718页可以发现：
 //     0F 9F表示是"Set byte if greater (ZF=0 and SF=OF)."。
 #define OPCODE_SET_BYTE_IF_GREATER_HIGH_BYTE        0x0F

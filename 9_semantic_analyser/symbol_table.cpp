@@ -7,7 +7,7 @@
 #include "x86_generator.h"
 
 
-std::vector<Operand> operand_stack;
+extern std::vector<Operand> operand_stack;
 extern std::vector<Operand>::iterator operand_stack_top;
 
 std::vector<Symbol> global_sym_stack;  //全局符号栈
@@ -337,9 +337,14 @@ int pointed_size(Type *t)
     return type_size(pointed_type(t), &align);
 }
 
-int calc_align(int n , int align)
+/*********************************************************** 
+ * 功能:	计算字节对齐位置
+ * n:		未对齐前值
+ * align:   对齐粒度
+ **********************************************************/
+int calc_align(int value , int align)
 {
-	return (n + align -1) & (~(align -1));
+	return (value + align -1) & (~(align -1));
 }
 
 /*********************************************************** 
