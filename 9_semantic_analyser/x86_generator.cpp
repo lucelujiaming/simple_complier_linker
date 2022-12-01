@@ -140,13 +140,14 @@ void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c)
 /************************************************************************/ 
 void load(int storage_class, Operand * opd)
 {
-	int v, ft, fc, fr;
-	fr = opd->storage_class;
-	ft = opd->type.type;
-	fc = opd->operand_value;
+	int opd_storage_class_val;
+	int opd_type, opd_operand_value, opd_storage_class;
+	opd_storage_class = opd->storage_class;
+	opd_type = opd->type.type;
+	opd_operand_value = opd->operand_value;
 
-	v = fr & SC_VALMASK;
-	if (fr & SC_LVAL)    // 左值
+	opd_storage_class_val = opd_storage_class & SC_VALMASK;
+	if (opd_storage_class & SC_LVAL)    // 左值
 	{
 		// 这个分支的汇编机器码生成方法如下：
 		// 例如：一条形如 char a = g_char; 的语句包括如下的指令。
@@ -158,7 +159,7 @@ void load(int storage_class, Operand * opd)
 		// 	0FBE 0500204000
 		//  8845FF
 		// 这就是下面代码中的神秘数字的来源。
-		if ((ft & T_BTYPE) == T_CHAR)
+		if ((opd_type & T_BTYPE) == T_CHAR)
 		{
 			// 参考MOVSX的命令格式在Intel白皮书1250页可以发现：
 			//     0F BE表示是" Move byte to doubleword with sign-extension."。
@@ -168,7 +169,7 @@ void load(int storage_class, Operand * opd)
 			gen_opcodeTwo(OPCODE_MOVSX_BYTE_TO_DOUBLEWORD_HIGH_BYTE, // 0x0f, 
 				OPCODE_MOVSX_BYTE_TO_DOUBLEWORD_LOW_BYTE); // 0xbe); 
 		}
-		else if ((ft & T_BTYPE) == T_SHORT)
+		else if ((opd_type & T_BTYPE) == T_SHORT)
 		{
 			// 参考MOVSX的命令格式在Intel白皮书1250页可以发现：
 			//     0F BF表示是"Move word to doubleword, with sign-extension."。
@@ -185,32 +186,33 @@ void load(int storage_class, Operand * opd)
 			// 8B /r	mov r32,r/m32	mov r/m32 to r32
 			gen_opcodeOne(OPCODE_MOV_RM32_TO_R32); // 0x8b); // 8B -> mov r32, r/m32
 		}
-		gen_modrm(ADDR_OTHER, storage_class, fr, opd->sym, fc);
+		gen_modrm(ADDR_OTHER, storage_class, 
+			opd_storage_class, opd->sym, opd_operand_value);
 	}
 	else    // 右值
 	{
 		// 如果右值是全局变量。例如：立即数。注意：
 		// 很多局部变量其实是放在寄存器中的。此时，不会为右值生成指令。例如：
 		//     int  c = g_a ; // g_a为全局变量。
-		if (v == SC_GLOBAL)
+		if (opd_storage_class_val == SC_GLOBAL)
 		{
 			// B8+ rd	mov r32,imm32		mov imm32 to r32
 			gen_opcodeOne(OPCODE_MOVE_IMM32_TO_R32 + storage_class);
-			gen_addr32(fr, opd->sym, fc);
+			gen_addr32(opd_storage_class, opd->sym, opd_operand_value);
 		}
 		// 如果右值是局部变量。注意：
 		// 很多局部变量其实是放在寄存器中的。此时，不会为右值生成指令。
 		// 只有需要对右值寻址的情况下，才会进入这个分支。例如：
 		//    int  * pa = &a;
 		//    int x = pt.x;
-		else if (v == SC_LOCAL)
+		else if (opd_storage_class_val == SC_LOCAL)
 		{
 			// LEA--Load Effective Address
 			// 8D /r	LEA r32,m	Store effective address for m in register r32
 			gen_opcodeOne(OPCODE_LEA_EFFECTIVE_ADDRESS_IN_R32);
-			gen_modrm(ADDR_OTHER, storage_class, SC_LOCAL, opd->sym, fc);
+			gen_modrm(ADDR_OTHER, storage_class, SC_LOCAL, opd->sym, opd_operand_value);
 		}
-		else if (v == SC_CMP) // 适用于c=a>b情况
+		else if (opd_storage_class_val == SC_CMP) // 适用于c=a>b情况
 		{
 			/************************************************************************/
 			/*  适用情况生成的样例代码                                              */
@@ -229,14 +231,14 @@ void load(int storage_class, Operand * opd)
 			// OF 9F			SETG r/m8	Set byte if greater(ZF=0 and SF=OF)
 			// 0F 8F cw/cd		JG rel16/32	jump near if greater(ZF=0 and SF=OF)
 			gen_opcodeTwo(OPCODE_SET_BYTE_IF_GREATER_HIGH_BYTE // 0x0f
-						, fc + 16);
+						, opd_operand_value + 16);
 			gen_modrm(ADDR_REG, 0, storage_class, NULL, 0);
 		}
-		else if (v != storage_class)
+		else if (opd_storage_class_val != storage_class)
 		{
 			// 89 /r	MOV r/m32,r32	Move r32 to r/m32
 			gen_opcodeOne(OPCODE_STORE_SHORT_INT_OPCODE);
-			gen_modrm(ADDR_REG, v, storage_class, NULL, 0);
+			gen_modrm(ADDR_REG, opd_storage_class_val, storage_class, NULL, 0);
 		}
 	}
 }
@@ -557,7 +559,7 @@ int gen_jmpforward(int t)
 	// E9 cd	JMP rel32	
 	// Jump near,relative,displacement relative to next instruction
 	gen_opcodeOne(OPCODE_JUMP_NEAR); // (0xe9);
-	return makelist(t);
+	return make_jmpaddr_list(t);
 }
 
 /************************************************************************/
@@ -593,8 +595,8 @@ void gen_jmpbackward(int a)
 /************************************************************************/
 /* 功能：    生成条件跳转指令                                           */
 /* jmp_addr：前一跳转指令地址                                           */
-/* 返回值：  由makelist生成的新跳转指令地址。                           */
-/*           gen_jmpforward也调用了makelist并返回。                     */
+/* 返回值：  由make_jmpaddr_list生成的新跳转指令地址。                  */
+/*           gen_jmpforward也调用了make_jmpaddr_list并返回。            */
 /************************************************************************/
 int gen_jcc(int jmp_addr)
 {
@@ -618,7 +620,7 @@ int gen_jcc(int jmp_addr)
 		// .....
 		gen_opcodeTwo(OPCODE_JCC_JUMP_NEAR_IF_GREATER // 0x0f
 				, operand_stack_top->operand_value ^ inv);
-		jmp_addr = makelist(jmp_addr);
+		jmp_addr = make_jmpaddr_list(jmp_addr);
 	}
 	else
 	{
@@ -656,7 +658,7 @@ int gen_jcc(int jmp_addr)
 			// .....
 			gen_opcodeTwo(OPCODE_JCC_JUMP_NEAR_IF_GREATER // 0x0f
 							, 0x85 ^ inv);
-			jmp_addr = makelist(jmp_addr);
+			jmp_addr = make_jmpaddr_list(jmp_addr);
 		}
 	}
 	operand_pop();
@@ -669,7 +671,7 @@ int gen_jcc(int jmp_addr)
  * 这个函数的逻辑是这样的。就是这里不真的生成函数开头代码。
  * 只是记录函数体开始的位置，等到函数体结束时，在函数gen_epilog中填充。
  **********************************************************/
-void gen_prolog(Type *func_type)
+void gen_prologue(Type *func_type)
 {
 	int addr, align, size, func_call;
 	int param_addr;
@@ -727,12 +729,13 @@ void gen_prolog(Type *func_type)
  * 5. POP  EBP 
  * 6. RETN XXXX
  **********************************************************/
-void gen_epilog()
+void gen_epilogue()
 {
-	int v, saved_ind, opc;
-	// 参考MOV的命令格式在Intel白皮书1161页可以发现：
-	//     8B表示是"Move r/m32 to r32."。
-	// 8B /r	mov r32,r/m32	mov r/m32 to r32
+	int reserved_stack_size, saved_ind, opc;
+	// 生成函数结尾指令。包括三条：
+	//    参考MOV的命令格式在Intel白皮书1161页可以发现：
+	//        8B表示是"Move r/m32 to r32."。
+	//    8B /r	mov r32,r/m32	mov r/m32 to r32
 	gen_opcodeOne((char)OPCODE_MOV_RM32_TO_R32); // 0x8B);
 	/* 4. MOV ESP, EBP*/
 	gen_modrm(ADDR_REG, REG_ESP, REG_EBP, NULL, 0);
@@ -766,7 +769,7 @@ void gen_epilog()
 		gen_byte(func_ret_sub);
 		gen_byte(func_ret_sub >> 8);
 	}
-	v = calc_align(-function_stack_loc, 4);
+	reserved_stack_size = calc_align(-function_stack_loc, 4);
 	// 把ind设置为之前记录函数体开始的位置。
 	saved_ind = sec_text_opcode_ind;
 	sec_text_opcode_ind = func_begin_ind;
@@ -793,7 +796,7 @@ void gen_epilog()
 	gen_opcodeOne(OPCODE_SUBTRACT_IMM32_FROM_RM32); // 0x81);
 	opc = 5;
 	gen_modrm(ADDR_REG, opc, REG_ESP, NULL, 0);
-	gen_dword(v);
+	gen_dword(reserved_stack_size);
 
 	// 恢复ind的值。
 	sec_text_opcode_ind = saved_ind;

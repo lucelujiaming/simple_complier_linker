@@ -15,7 +15,6 @@ std::vector<Symbol> local_sym_stack;   //局部符号栈
 
 
 extern std::vector<TkWord> tktable;
-extern int token_type;
 
 Type char_pointer_type,		// 字符串指针
 	 int_type,				// int类型
@@ -29,19 +28,19 @@ Symbol *sym_sec_rdata;			// 只读节符号
  *  type：符号数据类型
  *  related_value：   符号关联值
  **********************************************************/
-Symbol * sym_direct_push(std::vector<Symbol> &ss, int token_code, Type * type, int related_value)
+Symbol * sym_direct_push(std::vector<Symbol> &sym_stack, int token_code, Type * type, int related_value)
 {
-	Symbol s; //, *p;
-	s.token_code =token_code;
-	s.typeSymbol.type = type->type;
-	s.typeSymbol.ref = type->ref;
-	s.related_value =related_value;
-	s.next = NULL;
-	ss.push_back(s);
+	Symbol symElement; //, *p;
+	symElement.token_code =token_code;
+	symElement.typeSymbol.type = type->type;
+	symElement.typeSymbol.ref = type->ref;
+	symElement.related_value =related_value;
+	symElement.next = NULL;
+	sym_stack.push_back(symElement);
 	// printf("\t ss.size = %d \n", ss.size());
-	if (ss.size() >= 1)
+	if (sym_stack.size() >= 1)
 	{
-		return &ss.back();
+		return &sym_stack.back();
 		// return &ss[0];
 	}
 	else
@@ -172,13 +171,16 @@ Symbol * var_sym_put(Type * type, int storage_class, int token_code, int addr)
 Symbol * sec_sym_put(char * sec, int c)
 {
 	TkWord * tp;
-	Symbol *s;
+	Symbol *sym;
 	Type typeCurrent;
 	typeCurrent.type = T_INT;
 	tp = tkword_insert(sec); // , TK_CINT);
-	token_type = tp->tkcode ;
-	s = sym_push(token_type, &typeCurrent, SC_LOCAL, c);
-	return s;
+	// token_type = tp->tkcode ;
+	set_current_token_type(tp->tkcode);
+	// s = sym_push(token_type, &typeCurrent, SC_LOCAL, c);
+	sym = sym_push(get_current_token_type(), 
+					&typeCurrent, SC_LOCAL, c);
+	return sym;
 }
 
 //单词编码
@@ -193,27 +195,27 @@ Symbol * sec_sym_put(char * sec, int c)
  *  p_top：符号栈栈顶
  *  b：    符号指针
  **********************************************************/
-void sym_pop(std::vector<Symbol> * pop, Symbol *b)
+void sym_pop(std::vector<Symbol> * pop, Symbol *new_top)
 {
-	Symbol *s, **ps;
+	Symbol *sym, **symTktablePtr;
 	TkWord * ts;
 	int token_code;
 
 	// s = &(pop->back());
-	s = local_sym_stack.end() - 1;
-	while(s != b)
+	sym = local_sym_stack.end() - 1;
+	while(sym != new_top)
 	{
-		token_code = s->token_code;
+		token_code = sym->token_code;
 		// 不记录结构体成员和匿名符号
 		if((token_code & SC_STRUCT) || token_code < SC_ANOM)
 		{
 			ts = &(TkWord)tktable[token_code & ~SC_STRUCT];
 			if(token_code & SC_STRUCT)
-				ps = &ts->sym_struct;
+				symTktablePtr = &ts->sym_struct;
 			else
-				ps = &ts->sym_identifier;
+				symTktablePtr = &ts->sym_identifier;
 
-			*ps = s->prev_tok ;
+			*symTktablePtr = sym->prev_tok ;
 			tktable[token_code & ~SC_STRUCT] = *ts;
 			printf("sym_pop:: (%s, %08X, %08X) \n", tktable[token_code & ~SC_STRUCT].spelling, 
 				tktable[token_code & ~SC_STRUCT].sym_struct, tktable[token_code & ~SC_STRUCT].sym_identifier);
@@ -223,7 +225,7 @@ void sym_pop(std::vector<Symbol> * pop, Symbol *b)
 		if(pop->size() > 0)
 		{
 			// s = &(pop->back());
-			s = local_sym_stack.end() - 1;
+			sym = local_sym_stack.end() - 1;
 		}
 		else
 			break;
@@ -234,7 +236,7 @@ void sym_pop(std::vector<Symbol> * pop, Symbol *b)
  *  功能：查找结构定义
  *  v：   符号编号
  **********************************************************/
-Symbol * struct_search(int v)
+Symbol * struct_search(int token_code)
 {
 #if 0
 	printf("\n -- struct_search -- ");
@@ -244,8 +246,8 @@ Symbol * struct_search(int v)
 	}
 #endif
 	printf(" ---- \n");
-	if(tktable.size() > v)
-		return tktable[v].sym_struct;
+	if(tktable.size() > token_code)
+		return tktable[token_code].sym_struct;
 	else
 		return NULL;
 }
@@ -254,11 +256,11 @@ Symbol * struct_search(int v)
  * 功能:	查找结构定义 
  * v:		符号编号
  **********************************************************/
-Symbol * sym_search(int v)
+Symbol * sym_search(int token_code)
 {
-	if(tktable.size() > v)
+	if(tktable.size() > token_code)
 	{
-		TkWord tmpTkWord = tktable[v];
+		TkWord tmpTkWord = tktable[token_code];
 		return tmpTkWord.sym_identifier;
 	}
 	else
@@ -275,16 +277,16 @@ Symbol * sym_search(int v)
 /************************************************************************/
 int type_size(Type * typeCal, int * align)
 {
-	Symbol *s;
+	Symbol *sym;
 	int bt;
 	int PTR_SIZE = 4;
 	bt = typeCal->type & T_BTYPE;
 	switch(bt)
 	{
 	case T_STRUCT:
-		s = typeCal->ref;
-		*align = s->storage_class;
-		return s->related_value ;
+		sym = typeCal->ref;
+		*align = sym->storage_class;
+		return sym->related_value ;
 	case T_PTR:
 		// 如果是指针数组。这里分两种情况。
 		// 1. 一个是数组变量，类似于int AA[717]。
@@ -295,8 +297,8 @@ int type_size(Type * typeCal, int * align)
 		//    因为这种情况下，长度可以通过token直接计算。
 		if(typeCal->type & T_ARRAY)
 		{
-			s = typeCal->ref;
-			return type_size(&s->typeSymbol, align) * s->related_value;
+			sym = typeCal->ref;
+			return type_size(&sym->typeSymbol, align) * sym->related_value;
 		}
 		// 否则指针的长度为32位，也就是4。
 		else
@@ -346,10 +348,10 @@ int calc_align(int n , int align)
  **********************************************************/
 void mk_pointer(Type *t)
 {
-	Symbol *s;
-    s = sym_push(SC_ANOM, t, 0, -1);
+	Symbol *sym;
+    sym = sym_push(SC_ANOM, t, 0, -1);
     t->type = T_PTR ;
-    t->ref = s;
+    t->ref = sym;
 }
 
 /***********************************************************

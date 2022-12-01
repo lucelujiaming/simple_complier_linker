@@ -24,7 +24,7 @@ typedef struct Operand_t{
 void operand_push(Type* type, int r, int operand_value);
 void operand_pop();
 void operand_swap();
-void operand_assign(Operand *opd, int t, int r, int v);
+void operand_assign(Operand *opd, int token_code, int storage_class, int operand_value);
 
 #endif
 

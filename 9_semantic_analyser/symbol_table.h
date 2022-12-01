@@ -113,15 +113,15 @@ enum e_AddrForm
 	ADDR_REG = 3
 };
 
-Symbol * struct_search(int v);
-Symbol * sym_search(int v);
+Symbol * struct_search(int token_code);
+Symbol * sym_search(int token_code);
 void sym_pop(std::vector<Symbol> * pop, Symbol *b);
-Symbol * sym_push(int v, Type * type, int r, int c);
+Symbol * sym_push(int token_code, Type * type, int r, int c);
 
-Symbol * sym_direct_push(std::vector<Symbol> &ss, int v, Type * type, int c);
-Symbol * func_sym_push(int v, Type * type);
+Symbol * sym_direct_push(std::vector<Symbol> &sym_stack, int token_code, Type * type, int c);
+Symbol * func_sym_push(int token_code, Type * type);
 
-Symbol * var_sym_put(Type * type, int r, int v, int addr);
+Symbol * var_sym_put(Type * type, int r, int token_code, int addr);
 Symbol * sec_sym_put(char * sec, int c);
 
 void print_all_stack(char* strPrompt);

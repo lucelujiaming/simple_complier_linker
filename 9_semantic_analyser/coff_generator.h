@@ -59,13 +59,13 @@ typedef struct CoffReloc
 
 void section_realloc(Section * sec, int new_size);
 void coffreloc_add(Section * sec, Symbol * sym, int offset, char type);
-void coffsym_add_update(Symbol *s, int val, int sec_index,
+void coffsym_add_update(Symbol *sym, int val, int sec_index,
 		short type, char StorageClass);
 
 void init_coff();
 void write_obj(char * name);
 void free_sections();
 
-int makelist(int s);
-void backpatch(int t, int a);
+int  make_jmpaddr_list(int jmp_addr);
+void jmpaddr_backstuff(int fill_offset, int jmp_addr);
 #endif

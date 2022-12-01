@@ -193,54 +193,55 @@ void preprocess()
 	token_type=0;
 	temp = token;
 
-  if(*(program_buffer)=='\0') { /* end of file */
-    *token=0;
-    token_type = TK_EOF;
-  }
+	if(*(program_buffer)=='\0') { /* end of file */
+    	*token=0;
+    	token_type = TK_EOF;
+	}
 
-  while(1)
-  {
-	  if(iswhite(*(program_buffer))){
-		color_single_char(LEX_NORMAL, TK_COMMON, *program_buffer);
-  		++program_buffer;  /* skip over white space */
-	  }
-	  else if(*(program_buffer) == '\r' 
-		  &&*(program_buffer + 1) == '\n'){
-		  color_token(LEX_NORMAL, TK_COMMON, "\r\n");
-		  program_buffer += 2;   // Jump over \r\n
-	  }
-	  else if(*(program_buffer) == '\n'){
-		  color_token(LEX_NORMAL, TK_COMMON, "\n");
-		  program_buffer += 1;   // Jump over \r\n
-	  }
-	  else if(*(program_buffer) == '/' 
-		  &&*(program_buffer + 1) == '/'){
-		  // use logic in the find_eol 
-		  output_comment_eol();
-	  }
-	  else if(*(program_buffer) == '/' 
-		  &&*(program_buffer + 1) == '*'){
-		  color_token(LEX_NORMAL, TK_COMMENT, "/*");
-		  program_buffer += 2;
-		  parse_ctype_comment();
-	  }
-	  else
-		  break;
-  }
+	while(1)
+	{
+		if(iswhite(*(program_buffer))){
+			color_single_char(LEX_NORMAL, TK_COMMON, *program_buffer);
+  			++program_buffer;  /* skip over white space */
+		}
+		else if(*(program_buffer) == '\r' 
+			&&*(program_buffer + 1) == '\n'){
+			color_token(LEX_NORMAL, TK_COMMON, "\r\n");
+			program_buffer += 2;   // Jump over \r\n
+		}
+		else if(*(program_buffer) == '\n'){
+			color_token(LEX_NORMAL, TK_COMMON, "\n");
+			program_buffer += 1;   // Jump over \r\n
+		}
+		else if(*(program_buffer) == '/' 
+			&&*(program_buffer + 1) == '/'){
+			// use logic in the find_eol 
+			output_comment_eol();
+		}
+		else if(*(program_buffer) == '/' 
+			&&*(program_buffer + 1) == '*'){
+			color_token(LEX_NORMAL, TK_COMMENT, "/*");
+			program_buffer += 2;
+			parse_ctype_comment();
+		}
+		else
+			break;
+	}
 }
 
-int look_up(char *s)
+int look_up(char *token_str)
 {
   register int i; // ,j;
   char *p;
 
   /* convert to lowercase */
-  p = s;
+  p = token_str;
   while(*p){ *p = tolower(*p); p++; }
 
   /* see if token is in table */
   for(i=0; *token_table[i].command; i++)
-      if(!strcmp(token_table[i].command, s)) return token_table[i].tok;
+      if(!strcmp(token_table[i].command, token_str)) 
+	  	return token_table[i].tok;
   return -1; /* unknown command */
 }
 

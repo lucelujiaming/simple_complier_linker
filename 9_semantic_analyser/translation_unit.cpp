@@ -39,8 +39,8 @@ extern Type char_pointer_type,		// 字符串指针
 	 default_func_type;		// 缺省函数类型
 
 int type_specifier(Type * type);
-void declarator(Type * type, int * v, int * force_align);
-void direct_declarator(Type * type, int * v, int func_call);
+void declarator(Type * type, int * iTokenTypePtr, int * force_align);
+void direct_declarator(Type * type, int * iTokenTypePtr, int func_call);
 void direct_declarator_postfix(Type * type, int func_call);
 void parameter_type_list(Type * type, int func_call); // (int func_call);
 
@@ -160,7 +160,7 @@ void struct_member_alignment(int * force_align) // (int *fc)
 /* <declarator> ::= {<TK_STAR>}[<function_calling_convention>]               */
 /*                    [<struct_member_alignment>]<direct_declarator>         */
 /* Such as * __cdecl __align(4) function(int a, int b)                       */ 
-void declarator(Type * type, int * v, int * force_align)
+void declarator(Type * type, int * iTokenTypePtr, int * force_align)
 {
 	int fc ;
 	while(get_current_token_type() == TK_STAR)		// * 星号
@@ -176,15 +176,15 @@ void declarator(Type * type, int * v, int * force_align)
 	{
 		struct_member_alignment(force_align);  // &fc
 	}
-	direct_declarator(type, v, fc);
+	direct_declarator(type, iTokenTypePtr, fc);
 }
 
 /* <direct_declarator> ::= <IDENTIFIER><direct_declarator_postfix>              */
-void direct_declarator(Type * type, int * v, int func_call)   // Not support argv[] usage
+void direct_declarator(Type * type, int * iTokenTypePtr, int func_call)   // Not support argv[] usage
 {
 	if(get_current_token_type() >= TK_IDENT)  // 函数名或者是变量名，不可以是保留关键字。 
 	{
-		*v = get_current_token_type();
+		*iTokenTypePtr = get_current_token_type();
 		get_token();
 	}
 	else
@@ -202,7 +202,7 @@ void direct_declarator(Type * type, int * v, int func_call)   // Not support arg
 void direct_declarator_postfix(Type * type, int func_call)
 {
 	int n;
-	Symbol * s;
+	Symbol * symArrayPtr;
 	// <TK_OPENPA><parameter_type_list><TK_CLOSEPA> | <TK_OPENPA><TK_CLOSEPA>
 	// Such as : var(), var(int a, int b)
 	if(get_current_token_type() == TK_OPENPA)         
@@ -228,9 +228,9 @@ void direct_declarator_postfix(Type * type, int func_call)
 		skip_token(TK_CLOSEBR);
 		direct_declarator_postfix(type, func_call);    // Nesting calling
 		// 把数组大小保存到符号表中，作为一个匿名符号。
-		s = sym_push(SC_ANOM, type, 0, n);
+		symArrayPtr = sym_push(SC_ANOM, type, 0, n);
 		type->type = T_ARRAY | T_PTR;
-		type->ref = s;
+		type->ref = symArrayPtr;
 	}
 }
 
@@ -253,11 +253,11 @@ void direct_declarator_postfix(Type * type, int func_call)
 void parameter_type_list(Type * type, int func_call) // (int func_call)
 {
 	int n;
-	Symbol **plast, *s, *first;
+	Symbol **lastSymPtr, *sym, *firstSym;
 	Type typeCurrent ;
 	get_token();
-	first = NULL;
-	plast = &first;
+	firstSym = NULL;
+	lastSymPtr = &firstSym;
 	
 	while(get_current_token_type() != TK_CLOSEPA)   // get_token until meet ) 右圆括号
 	{
@@ -266,9 +266,9 @@ void parameter_type_list(Type * type, int func_call) // (int func_call)
 			print_error("Invalid type_specifier\n");
 		}
 		declarator(&typeCurrent, &n, NULL);			// Translate one parameter declaration
-		s = sym_push(n|SC_PARAMS, &typeCurrent, 0, 0);
-		*plast = s;
-		plast  = &s->next;
+		sym = sym_push(n|SC_PARAMS, &typeCurrent, 0, 0);
+		*lastSymPtr = sym;
+		lastSymPtr  = &sym->next;
 		
 		if(get_current_token_type() == TK_CLOSEPA) // We encounter the ) after one parameter
 		{
@@ -290,10 +290,10 @@ void parameter_type_list(Type * type, int func_call) // (int func_call)
 		syntax_state = SNTX_NUL;
 	syntax_indent();
 	
-	s = sym_push(SC_ANOM, type, func_call, 0);
-	s->next = first;
+	sym = sym_push(SC_ANOM, type, func_call, 0);
+	sym->next = firstSym;
 	type->type = T_FUNC;
-	type->ref = s;
+	type->ref = sym;
 }
 
 // ------------------ func_body 
@@ -314,7 +314,7 @@ void func_body(Symbol * sym)
 	sym_direct_push(local_sym_stack, SC_ANOM, &int_type, 0);
 
 	// 3. 生成函数开头代码。
-	gen_prolog(&(sym->typeSymbol));
+	gen_prologue(&(sym->typeSymbol));
 	return_symbol_pos = 0;
 
 	// 4. 调用复合语句处理函数处理函数体中的语句。
@@ -323,10 +323,10 @@ void func_body(Symbol * sym)
 	// print_all_stack("Left local_sym_stack");
 
 	// 5. 函数返回后，回填返回地址。
-	backpatch(return_symbol_pos, sec_text_opcode_ind);
+	jmpaddr_backstuff(return_symbol_pos, sec_text_opcode_ind);
 	
 	// 6. 生成函数结尾代码。
-	gen_epilog();
+	gen_epilogue();
 	sec_text->data_offset = sec_text_opcode_ind;
 
 	/* 7. 清空局部符号表栈 */
@@ -344,14 +344,14 @@ void print_all_stack(char* strPrompt)
 	printf("\n-------------------%s---------------------------\n", strPrompt);
 	for(i = 0; i < global_sym_stack.size(); ++i)
 	{
-		printf("\t global_sym_stack[%d].v = %08X c = %d type = %d\n", i, 
+		printf("\t global_sym_stack[%d].TokenType = %08X c = %d type = %d\n", i, 
 			global_sym_stack[i].token_code, 
 			global_sym_stack[i].related_value, 
 			global_sym_stack[i].typeSymbol);
 	}
 	for(i = 0; i < local_sym_stack.size(); ++i)
 	{
-		printf("\t  local_sym_stack[%d].v = %08X c = %d type = %d\n", i, 
+		printf("\t  local_sym_stack[%d].TokenType = %08X c = %d type = %d\n", i, 
 			local_sym_stack[i].token_code, 
 			local_sym_stack[i].related_value, 
 			local_sym_stack[i].typeSymbol);
@@ -559,9 +559,9 @@ void statement(int *bsym, int *csym)
 /*                             {<declaration>} {<statement>}            */
 /*                          <TK_END>                                    */
 /************************************************************************/
-int is_type_specifier(int token_type)
+int is_type_specifier(int token_code)
 {
-	switch(token_type)
+	switch(token_code)
 	{
 	case KW_CHAR:
 	case KW_SHORT:
@@ -586,9 +586,9 @@ int is_type_specifier(int token_type)
 /************************************************************************/
 void compound_statement(int * bsym, int * csym)
 {
-	Symbol *s;
+	Symbol *sym;
 	// s = &(local_sym_stack[0]);
-	s = local_sym_stack.end() - 1;
+	sym = local_sym_stack.end() - 1;
 	// local_sym_stack.erase(&local_sym_stack[0]);
 	// local_sym_stack.erase(local_sym_stack.end() - 1);
 	printf("\t local_sym_stack.size = %d \n", local_sym_stack.size());
@@ -613,7 +613,7 @@ void compound_statement(int * bsym, int * csym)
 	}
 	syntax_state = SNTX_LF_HT;
 	printf("\t local_sym_stack.size = %d \n", local_sym_stack.size());
-	sym_pop(&local_sym_stack, s);
+	sym_pop(&local_sym_stack, sym);
 	get_token();
 }
 
@@ -673,15 +673,15 @@ void if_statement(int *bsym, int *csym)
 		// 为ELSE语句生成跳转指令。
 		else_jmp = gen_jmpforward(0);
 		// 为IF语句填人相对地址。
-		backpatch(if_jmp, sec_text_opcode_ind);
+		jmpaddr_backstuff(if_jmp, sec_text_opcode_ind);
 		statement(bsym, csym);
 		// 为ELSE语句填人相对地址。
-		backpatch(else_jmp, sec_text_opcode_ind);
+		jmpaddr_backstuff(else_jmp, sec_text_opcode_ind);
 	}
 	else
 	{
 		// 为IF语句填人相对地址。
-		backpatch(if_jmp, sec_text_opcode_ind);
+		jmpaddr_backstuff(if_jmp, sec_text_opcode_ind);
 	}
 }	
 
@@ -786,7 +786,7 @@ void for_statement(int *bsym, int *csym)
 		// 例如：10. JMP SHORT scc_anal.0040125A
 		gen_jmpbackward(for_exit_cond_address);
 		// 执行到了这里，我们来到了循环循环体。我们可以填充循环体的起始地址了。
-		backpatch(for_body_address, sec_text_opcode_ind);
+		jmpaddr_backstuff(for_body_address, sec_text_opcode_ind);
 		syntax_state = SNTX_LF_HT;
 		skip_token(TK_CLOSEPA);
 	}
@@ -803,9 +803,9 @@ void for_statement(int *bsym, int *csym)
 	// 例如：18. JMP  SHORT scc_anal.0040126B
 	gen_jmpbackward(for_inc_address);
 	// 执行到了这里，我们可以填充循环体的结束地址了。
-	backpatch(for_end_address, sec_text_opcode_ind);
-	// 这句话好像是多余的。因为b一直是零。而且如果传入0，backpatch什么都不会做。
-	// backpatch(for_inc_address, for_exit_cond_address);
+	jmpaddr_backstuff(for_end_address, sec_text_opcode_ind);
+	// 这句话好像是多余的。因为b一直是零。而且如果传入0，jmpaddr_backstuff什么都不会做。
+	// jmpaddr_backstuff(for_inc_address, for_exit_cond_address);
 }
 
 /************************************************************************/
@@ -840,7 +840,7 @@ void while_statement(int *bsym, int *csym)
 	gen_jmpbackward(while_exit_cond_address);
 	// 循环体处理完了以后，跳转到循环头。
 	// 执行到了这里，我们可以填充循环体的结束地址了。
-	backpatch(while_end_address, sec_text_opcode_ind);
+	jmpaddr_backstuff(while_end_address, sec_text_opcode_ind);
 }
 
 /************************************************************************/
@@ -1014,7 +1014,7 @@ void assignment_expression()
 /************************************************************************/
 void equality_expression()
 {
-	int token_type;
+	int token_code;
 	relational_expression();
 //	if (get_current_token_type() == TK_EQ 
 //		|| get_current_token_type() == TK_NEQ)
@@ -1022,10 +1022,10 @@ void equality_expression()
 		|| get_current_token_type() == TK_NEQ)
 	{
 		// 获得运算符
-		token_type = get_current_token_type();
+		token_code = get_current_token_type();
 		get_token();
 		relational_expression();
-		gen_op(token_type);
+		gen_op(token_code);
 	}
 }
 
@@ -1071,16 +1071,16 @@ void unary_expression();
 /************************************************************************/
 void relational_expression()
 {
-	int token_type;
+	int token_code;
 	additive_expression();
 	while(get_current_token_type() == TK_LT || get_current_token_type() == TK_LEQ 
 		|| get_current_token_type() == TK_GT || get_current_token_type() == TK_GEQ)
 	{
 		// 获得运算符
-		token_type = get_current_token_type();
+		token_code = get_current_token_type();
 		get_token();
 		additive_expression();
-		gen_op(token_type);
+		gen_op(token_code);
 	}
 }
  
@@ -1114,15 +1114,15 @@ void relational_expression()
 /************************************************************************/
 void additive_expression()
 {
-	int token_type;
+	int token_code;
 	multiplicative_expression();
 	while(get_current_token_type() == TK_PLUS || get_current_token_type() == TK_MINUS)
 	{
 		// 获得运算符
-		token_type = get_current_token_type();
+		token_code = get_current_token_type();
 		get_token();
 		multiplicative_expression();
-		gen_op(token_type);
+		gen_op(token_code);
 	}
 }
 
@@ -1186,15 +1186,17 @@ void additive_expression()
 /************************************************************************/
 void multiplicative_expression()
 {
-	int token_type;
+	int token_code;
 	unary_expression();
-	while(get_current_token_type() == TK_STAR || get_current_token_type() == TK_DIVIDE || get_current_token_type() == TK_MOD)
+	while(get_current_token_type() == TK_STAR
+		|| get_current_token_type() == TK_DIVIDE
+		|| get_current_token_type() == TK_MOD)
 	{
 		// 获得运算符
-		token_type = get_current_token_type();
+		token_code = get_current_token_type();
 		get_token();
 		unary_expression();
-		gen_op(token_type);
+		gen_op(token_code);
 	}
 }
 
@@ -1507,7 +1509,8 @@ void primary_expression()
 	// 这里的addr暂时没有用到。这个是用法是首先调用allocate_storage函数，从这个函数中获得。
 	// 这个函数主要用于在空间不够的时候，分配节的空间，同时返回当前符号在节中的存储位置。
 	// 这里的节是一个可执行程序中的概念。例如代码节，数据节，符号表节。
-	int token_type , storage_class, addr = 0;
+	int token_code , storage_class, addr = 0;
+	int iTokenCode;   // Used in TK_CSTR
 	Type typeExpression;
 	Symbol *token_symbol ;
 	Section * sec = NULL;
@@ -1523,8 +1526,8 @@ void primary_expression()
 		// get_token();
 		// 整个操作分为三步：
 		//   1.1. 生成一个字符串指针符号。
-		token_type = T_CHAR;
-		typeExpression.type = token_type;
+		iTokenCode = T_CHAR;
+		typeExpression.type = iTokenCode;
 		mk_pointer(&typeExpression);
 		typeExpression.type |= T_ARRAY;
 		// 字符串常量在.rdata节分配存储空间
@@ -1555,17 +1558,17 @@ void primary_expression()
 		break;
 	default:
 		char tkStr[128];
-		token_type = get_current_token_type();
+		token_code = get_current_token_type();
 		strcpy(tkStr, get_current_token());
 		get_token();
 		// The problem of String at 07/11, We need the parse_string function
-		if (token_type < TK_IDENT) 
+		if (token_code < TK_IDENT) 
 		{
 			// print_error("Need variable or constant\n");
 			printf("Need variable or constant\n");
 		}
 		// 根据token_type查找符号。
-		token_symbol = sym_search(token_type);
+		token_symbol = sym_search(token_code);
 		if(!token_symbol)
 		{
 			if (get_current_token_type() != TK_OPENPA)
@@ -1575,7 +1578,7 @@ void primary_expression()
 				printf("%s does not declare\n", tkStr);
 				// print_error(testStr);
 			}
-			token_symbol = func_sym_push(token_type, &default_func_type);
+			token_symbol = func_sym_push(token_code, &default_func_type);
 			token_symbol->storage_class = SC_GLOBAL | SC_SYM;
 		}
 		// 取出符号的寄存器存储类型
@@ -1659,17 +1662,17 @@ void argument_expression_list()
  ***********************************************************************/
 void struct_member_declaration(int * maxalign, int * offset, Symbol *** ps)
 {
-	int v, size, align;
-	Symbol * ss;
+	int token_code, size, align;
+	Symbol * struct_symbol;
 	Type typeOne, bType ;
 	int force_align;
 	
 	type_specifier(&bType);
 	while (1)
 	{
-		v = 0 ;
+		token_code = 0 ;
 		typeOne = bType;
-		declarator(&typeOne, &v, &force_align);
+		declarator(&typeOne, &token_code, &force_align);
 		// Adding Symbol operation
 		size = type_size(&typeOne, &align);
 		if (force_align & ALIGN_SET)
@@ -1681,10 +1684,10 @@ void struct_member_declaration(int * maxalign, int * offset, Symbol *** ps)
 		{
 			*maxalign = align;
 		}
-		ss = sym_push(v | SC_MEMBER, &typeOne, 0, *offset);
+		struct_symbol = sym_push(token_code | SC_MEMBER, &typeOne, 0, *offset);
 		*offset += size;
-		**ps = ss;
-		*ps = &ss->next;
+		**ps = struct_symbol;
+		*ps = &struct_symbol->next;
 		// end of Adding Symbol operation
 
 		if (get_current_token_type() == TK_SEMICOLON)
@@ -1706,26 +1709,26 @@ void struct_declaration_list(Type * type)
 	int maxalign, offset;
 	// syntax_state = SNTX_LF_HT;
 	// syntax_level++;
-	Symbol *s, **ps;
+	Symbol *sym, **symPtr;
 	get_token();
 	// Adding Symbol operation
-	s = type->ref;
-	if (s->related_value != -1)
+	sym = type->ref;
+	if (sym->related_value != -1)
 	{
 		print_error("Has defined");
 	}
 	maxalign = 1;
-	ps = &s->next;
+	symPtr = &sym->next;
 	offset = 0 ;
 	// end of Adding Symbol operation
 	while (get_current_token_type() != TK_END)  // } 右大括号
 	{
-		struct_member_declaration(&maxalign, &offset, &ps);
+		struct_member_declaration(&maxalign, &offset, &symPtr);
 	}
 	skip_token(TK_END);
 	// syntax_state = SNTX_LF_HT;
-	s->related_value = calc_align(offset, maxalign);
-	s->storage_class = maxalign;
+	sym->related_value = calc_align(offset, maxalign);
+	sym->storage_class = maxalign;
 }
 
 /************************************************************************/
@@ -1736,7 +1739,7 @@ void struct_declaration_list(Type * type)
 void struct_specifier(Type * typeStruct)
 {
 	int token_code ;
-	Symbol * s;
+	Symbol * sym;
 	Type typeOne;
 	
 	get_token();		// Get struct name <IDENTIFIER>
@@ -1758,15 +1761,15 @@ void struct_specifier(Type * typeStruct)
 		print_error("Need struct name\n");
 	}
 	// Adding Symbol operation
-	s = struct_search(token_code);
-	if (!s)
+	sym = struct_search(token_code);
+	if (!sym)
 	{
 		typeOne.type = T_STRUCT;
-		s = sym_push(token_code | SC_STRUCT, &typeOne, 0, -1);
-		s->storage_class = 0;
+		sym = sym_push(token_code | SC_STRUCT, &typeOne, 0, -1);
+		sym->storage_class = 0;
 	}
 	typeStruct->type = T_STRUCT;
-	typeStruct->ref = s;
+	typeStruct->ref  = sym;
 	// end of Adding Symbol operation
 	if (get_current_token_type() == TK_BEGIN)
 	{
