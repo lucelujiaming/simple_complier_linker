@@ -8,9 +8,9 @@ void gen_op(int op);
 void gen_prologue(Type *func_type);
 void gen_epilogue();
 // 生成跳转
-void gen_jmpbackward(int a);
-int gen_jmpforward(int t);
-int gen_jcc(int t);
+void gen_jmpbackward(int target_address);
+int gen_jmpforward(int target_address);
+int gen_jcc(int jmp_addr);
 // 生成赋值
 int load_one(int rc, Operand * opd);
 void load_two(int rc1, int rc2);

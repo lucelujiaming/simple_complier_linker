@@ -172,17 +172,19 @@ void parse_ctype_comment()
 	} while (1);
 }
 
-int isdelim(char c)
+int isdelim(char charCurrent)
 {       
   // if(strchr(" ;,+-<>/*%^=()[]", c) || c==9 || c=='\r' || c=='\n' || c==0)
-  if(strchr(DELIM_TOKENS, c) || c==9 || c=='\r' || c=='\n' || c==0)
+  if(strchr(DELIM_TOKENS, charCurrent) || 
+		charCurrent=='\t' || charCurrent=='\r' || 
+		charCurrent=='\n' || charCurrent==0)
     return 1;
   return 0;
 }
 
-int iswhite(char c)
+int iswhite(char charCurrent)
 {
-  if(c==' ' || c=='\t') return 1;
+  if(charCurrent==' ' || charCurrent=='\t') return 1;
   else return 0;
 }
 
@@ -477,11 +479,11 @@ int get_token()
   return token_type;
 }
 
-void skip_token(int c)
+void skip_token(int cTokenCode)
 {
-	if (get_current_token_type() != c)
+	if (get_current_token_type() != cTokenCode)
 	{
-		printf("Missing %d\n", c);
+		printf("Missing %d\n", cTokenCode);
 	}
 	get_token();
 }

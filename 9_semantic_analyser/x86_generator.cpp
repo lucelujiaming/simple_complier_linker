@@ -546,11 +546,11 @@ void gen_opTwoInteger(int reg_code, int op)
 }
 
 /************************************************************************/
-/* 功能：生成向高地址跳转指令，跳转地址待定                             */
-/* t：前一跳转指令地址                                                  */
+/* 功能：          生成向高地址跳转指令，跳转地址待定                   */
+/* target_address：前一跳转指令地址                                     */
 /* makelist本来代码在书的后面                                           */
 /************************************************************************/
-int gen_jmpforward(int t)
+int gen_jmpforward(int target_address)
 {
 	// 参考JMP的命令格式在Intel白皮书1064页可以发现：
 	//     E9 cd表示是"Jump near, relative, RIP = RIP + 32-bit 
@@ -559,7 +559,7 @@ int gen_jmpforward(int t)
 	// E9 cd	JMP rel32	
 	// Jump near,relative,displacement relative to next instruction
 	gen_opcodeOne(OPCODE_JUMP_NEAR); // (0xe9);
-	return make_jmpaddr_list(t);
+	return make_jmpaddr_list(target_address);
 }
 
 /************************************************************************/

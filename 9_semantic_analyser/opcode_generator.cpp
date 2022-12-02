@@ -63,22 +63,22 @@ void gen_opcodeTwo(unsigned char first, unsigned char second)
 }
 
 /************************************************************************/
-/*  功能：生成4字节操作数                                               */
-/*  c：4字节操作数                                                      */
+/*  功能： 生成4字节操作数                                              */
+/*  value：4字节操作数                                                  */
 /************************************************************************/
-void gen_dword(unsigned int c)
+void gen_dword(unsigned int value)
 {
-	gen_byte(c);
-	gen_byte(c >> 8);
-	gen_byte(c >> 16);
-	gen_byte(c >> 24);
+	gen_byte(value);
+	gen_byte(value >> 8);
+	gen_byte(value >> 16);
+	gen_byte(value >> 24);
 }
 
 /************************************************************************/
 /* 功能：生成全局符号地址，并增加COFF重定位记录                         */
-/* storage_class：符号存储类型                                                      */
-/* sym：          符号指针                                                        */
-/* value：        符号关联值                                                        */
+/* storage_class：符号存储类型                                          */
+/* sym：          符号指针                                              */
+/* value：        符号关联值                                            */
 /************************************************************************/
 void gen_addr32(int storage_class, Symbol * sym, int value)
 {
