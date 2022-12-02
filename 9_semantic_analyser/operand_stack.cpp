@@ -5,7 +5,8 @@
 std::vector<Operand> operand_stack;
 std::vector<Operand>::iterator operand_stack_top = NULL;
 std::vector<Operand>::iterator operand_stack_last_top = NULL;
-
+// 调试用数据。
+int operand_stack_count = 0;
 /************************************************************************/
 /*  功能：操作数入栈                                                    */
 /*  type：操作数数据类型                                                */
@@ -29,6 +30,7 @@ void operand_push(Type* type, int storage_class, int operand_value)
 	{
 		strcpy(operand_stack_top->token_str, get_current_token());
 	}
+	operand_stack_count++;
 }
 
 /************************************************************************/
@@ -45,6 +47,7 @@ void operand_pop()
 		operand_stack_last_top = operand_stack_top;
 		operand_stack_last_top--;
 	}
+	operand_stack_count--;
 }
 
 /************************************************************************/
@@ -59,6 +62,23 @@ void operand_swap()
 		*operand_stack_top = *operand_stack_last_top;
 		*operand_stack_last_top = tmp;
 	}
+}
+
+void check_leftvalue()
+{
+    // 如果不是左值就报错。
+	if (!(operand_stack_top->storage_class & SC_LVAL))
+	{
+		print_error("Need left_value");
+	}
+}
+
+void cancel_lvalue()
+{
+	// 判断是否为左值。
+	check_leftvalue();
+	// 清除左值标志。
+	operand_stack_top->storage_class &= ~SC_LVAL;
 }
 
 /************************************************************************/

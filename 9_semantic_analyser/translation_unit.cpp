@@ -962,15 +962,6 @@ void expression()
 	}
 }
 
-void check_leftvalue()
-{
-    // 如果不是左值就报错。
-	if (!(operand_stack_top->storage_class & SC_LVAL))
-	{
-		print_error("Need left_value");
-	}
-}
-
 /************************************************************************/
 /*  <assignment_expression> ::= <equality_expression>                   */
 /*           |<unary_expression><TK_ASSIGN><assignment_expression>      */
@@ -1206,14 +1197,6 @@ void primary_expression();
 void postfix_expression();
 void sizeof_expression();
 void argument_expression_list();
-
-void cancel_lvalue()
-{
-	// 判断是否为左值。
-	check_leftvalue();
-	// 清除左值标志。
-	operand_stack_top->storage_class &= ~SC_LVAL;
-}
 
 void indirection()
 {
