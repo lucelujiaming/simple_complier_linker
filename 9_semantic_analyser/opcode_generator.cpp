@@ -10,7 +10,7 @@ extern Section *sec_text,	// 代码节
 		*sec_symtab,		// 符号表节	
 		*sec_dynsymtab;		// 链接库符号节
 
-extern int sec_text_opcode_ind ;	 	// 指令在代码节位置
+extern int sec_text_opcode_offset ;	 	// 指令在代码节位置
 
 // Operation generation functions
 /************************************************************************/
@@ -20,7 +20,7 @@ extern int sec_text_opcode_ind ;	 	// 指令在代码节位置
 void gen_byte(char write_byte)
 {
 	int indNext;
-	indNext = sec_text_opcode_ind + 1;
+	indNext = sec_text_opcode_offset + 1;
 	// 如果发现代码节已经分配的空间不够。
 	if (indNext > sec_text->data_allocated)
 	{
@@ -28,9 +28,9 @@ void gen_byte(char write_byte)
 		section_realloc(sec_text, indNext);
 	}
 	// 向代码节写人一个字节。
-	sec_text->data[sec_text_opcode_ind] = write_byte;
+	sec_text->data[sec_text_opcode_offset] = write_byte;
 	// 移动写入下标。
-	sec_text_opcode_ind = indNext;
+	sec_text_opcode_offset = indNext;
 }
 
 /************************************************************************/
@@ -86,7 +86,7 @@ void gen_addr32(int storage_class, Symbol * sym, int value)
 	if (storage_class & SC_SYM)
 	{
   		coffreloc_add(sec_text, sym, 
-			sec_text_opcode_ind, IMAGE_REL_I386_DIR32);
+			sec_text_opcode_offset, IMAGE_REL_I386_DIR32);
 	}
 	gen_dword(value);
 }

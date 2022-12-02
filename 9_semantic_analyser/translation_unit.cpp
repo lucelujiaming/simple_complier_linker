@@ -22,7 +22,7 @@ extern Section *sec_text,	// 代码节
 		*sec_symtab,		// 符号表节	
 		*sec_dynsymtab;		// 链接库符号节
 
-extern int sec_text_opcode_ind ;	 	// 指令在代码节位置
+extern int sec_text_opcode_offset ;	 	// 指令在代码节位置
 extern int function_stack_loc ;			// 局部变量在栈中位置
 extern Symbol *sym_sec_rdata;			// 只读节符号
 
@@ -44,13 +44,13 @@ void direct_declarator(Type * type, int * iTokenTypePtr, int func_call);
 void direct_declarator_postfix(Type * type, int func_call);
 void parameter_type_list(Type * type, int func_call); // (int func_call);
 
-void compound_statement(int * bsym, int * csym);
-void if_statement(int *bsym, int *csym);
-void break_statement(int *bsym);
+void compound_statement(int * break_address, int * continue_address);
+void if_statement(int *break_address, int *continue_address);
+void break_statement(int *break_address);
 void return_statement();
-void continue_statement(int *csym);
-void for_statement(int *bsym, int *csym);
-void while_statement(int *bsym, int *csym);
+void continue_statement(int *continue_address);
+void for_statement(int *break_address, int *continue_address);
+void while_statement(int *break_address, int *continue_address);
 void expression_statement();
 
 void expression();
@@ -306,9 +306,9 @@ void parameter_type_list(Type * type, int func_call) // (int func_call)
 void func_body(Symbol * sym)
 {
 	// 1. 增加或更新COFF符号
-	sec_text_opcode_ind = sec_text->data_offset;
+	sec_text_opcode_offset = sec_text->data_offset;
 	//    更新sym->related_value为符号COFF符号表中序号。
-	coffsym_add_update(sym, sec_text_opcode_ind, 
+	coffsym_add_update(sym, sec_text_opcode_offset, 
 		sec_text->index, CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
 	
 	/* 2. 放一个匿名符号到局部符号表中 */
@@ -324,11 +324,11 @@ void func_body(Symbol * sym)
 	// print_all_stack("Left local_sym_stack");
 
 	// 5. 函数返回后，回填返回地址。
-	jmpaddr_backstuff(return_symbol_pos, sec_text_opcode_ind);
+	jmpaddr_backstuff(return_symbol_pos, sec_text_opcode_offset);
 	
 	// 6. 生成函数结尾代码。
 	gen_epilogue();
-	sec_text->data_offset = sec_text_opcode_ind;
+	sec_text->data_offset = sec_text_opcode_offset;
 
 	/* 7. 清空局部符号表栈 */
 	if(local_sym_stack.size() > 0)
@@ -513,9 +513,9 @@ void init_variable(Type * type, Section * sec, int value) // , int idx)
 
 // ------------------ 语句：statement
 /************************************************************************/
-/* 功能:	解析语句                                                    */
-/* bsym:	break跳转位置。暂时没有用。                                 */
-/* csym:	continue跳转位置。暂时没有用。                              */
+/* 功能:	         解析语句                                           */
+/* break_address:	 break跳转位置。暂时没有用。                        */
+/* continue_address: continue跳转位置。暂时没有用。                     */
 /*                                                                      */
 /* <statement>::=<compound_statement>                                   */
 /*             | <if_statement>                                         */
@@ -525,30 +525,30 @@ void init_variable(Type * type, Section * sec, int value) // , int idx)
 /*             | <for_statement>                                        */
 /*             | <expression_statement>                                 */
 /************************************************************************/
-void statement(int *bsym, int *csym)
+void statement(int *break_address, int *continue_address)
 {
 	switch(get_current_token_type())
 	{
 	case TK_BEGIN:
-		compound_statement(bsym, csym);			// 复合语句
+		compound_statement(break_address, continue_address);			// 复合语句
 		break;
 	case KW_IF:
-		if_statement(bsym, csym);
+		if_statement(break_address, continue_address);
 		break;
 	case KW_RETURN:
 		return_statement();
 		break;
 	case KW_BREAK:
-		break_statement(bsym);
+		break_statement(break_address);
 		break;
 	case KW_CONTINUE:
-		continue_statement(csym);
+		continue_statement(continue_address);
 		break;
 	case KW_FOR:
-		for_statement(bsym, csym);
+		for_statement(break_address, continue_address);
 		break;
 	case KW_WHILE:
-		while_statement(bsym, csym);
+		while_statement(break_address, continue_address);
 		break;
 	default:
 		expression_statement();
@@ -578,15 +578,15 @@ int is_type_specifier(int token_code)
 }
 
 /************************************************************************/
-/* 功能:	解析复合语句                                                */
-/* bsym:	break跳转位置                                               */
-/* csym:	continue跳转位置                                            */
+/* 功能:	         解析复合语句                                       */
+/* break_address:	 break跳转位置                                      */
+/* continue_address: continue跳转位置                                   */
 /*                                                                      */
 /* <compound_statement>::=<TK_BEGIN>                                    */
 /*                           {<declaration>}{<statement>}               */
 /*                        <TK_END>                                      */
 /************************************************************************/
-void compound_statement(int * bsym, int * csym)
+void compound_statement(int * break_address, int * continue_address)
 {
 	Symbol *sym;
 	// s = &(local_sym_stack[0]);
@@ -611,7 +611,7 @@ void compound_statement(int * bsym, int * csym)
 		char temp_str[128];
 		sprintf(temp_str, "Execute %s statement", get_current_token());
 		print_all_stack(temp_str);
-		statement(bsym, csym);
+		statement(break_address, continue_address);
 	}
 	syntax_state = SNTX_LF_HT;
 	printf("\t local_sym_stack.size = %d \n", local_sym_stack.size());
@@ -653,9 +653,9 @@ void expression_statement()
 /*   JMP scc_anal. 00401245                                             */
 /* 执行到else语句说明，IF后面的语句执行完了，直接跳过ELSE部分即可。     */
 /************************************************************************/
-void if_statement(int *bsym, int *csym)
+void if_statement(int *break_address, int *continue_address)
 {
-	int if_jmp, else_jmp;
+	int if_jmp_addr, else_jmp_addr;
 	syntax_state = SNTX_SP;
 
 	get_token();
@@ -665,25 +665,25 @@ void if_statement(int *bsym, int *csym)
 	syntax_state = SNTX_LF_HT;
 	skip_token(TK_CLOSEPA);
 	// 为IF语句生成条件跳转指令。
-	if_jmp = gen_jcc(0);
-	statement(bsym, csym);
+	if_jmp_addr = gen_jcc(0);
+	statement(break_address, continue_address);
 
 	if(get_current_token_type() == KW_ELSE)
 	{
 		syntax_state = SNTX_LF_HT;
 		get_token();
 		// 为ELSE语句生成跳转指令。
-		else_jmp = gen_jmpforward(0);
+		else_jmp_addr = gen_jmpforward(0);
 		// 为IF语句填人相对地址。
-		jmpaddr_backstuff(if_jmp, sec_text_opcode_ind);
-		statement(bsym, csym);
+		jmpaddr_backstuff(if_jmp_addr, sec_text_opcode_offset);
+		statement(break_address, continue_address);
 		// 为ELSE语句填人相对地址。
-		jmpaddr_backstuff(else_jmp, sec_text_opcode_ind);
+		jmpaddr_backstuff(else_jmp_addr, sec_text_opcode_offset);
 	}
 	else
 	{
 		// 为IF语句填人相对地址。
-		jmpaddr_backstuff(if_jmp, sec_text_opcode_ind);
+		jmpaddr_backstuff(if_jmp_addr, sec_text_opcode_offset);
 	}
 }	
 
@@ -737,7 +737,7 @@ void if_statement(int *bsym, int *csym)
 /* 17. 完成arr[i] = i的赋值操作。                                       */
 /* 18. 完成循环体，跳转到i++指令的位置。                                */
 /************************************************************************/
-void for_statement(int *bsym, int *csym)
+void for_statement(int *break_address, int *continue_address)
 {
 	// int b;
 	int for_end_address, for_inc_address,for_exit_cond_address,for_body_address;
@@ -756,9 +756,9 @@ void for_statement(int *bsym, int *csym)
 		skip_token(TK_SEMICOLON);
 	}
 	// 现在我们位于for语句的第一个分号位置。首先记录下循环头的退出条件的位置。
-	for_exit_cond_address = sec_text_opcode_ind;
+	for_exit_cond_address = sec_text_opcode_offset;
 	// 初始化循环头的累加条件的位置。因为循环累加条件有可能不存在。
-	for_inc_address = sec_text_opcode_ind;
+	for_inc_address = sec_text_opcode_offset;
 	// 初始化循环体结束位置。
 	for_end_address = 0;
 	// b = 0;
@@ -780,7 +780,7 @@ void for_statement(int *bsym, int *csym)
 		// 生成循环头的不退出的跳转语句。例如：6. JMP scc_anal. 00401276
 		for_body_address = gen_jmpforward(0);
 		// 代码执行到这里我们来到了循环头的累加部分。记录下这个位置。
-		for_inc_address = sec_text_opcode_ind;
+		for_inc_address = sec_text_opcode_offset;
 		// 处理循环头的累加部分。
 		expression();
 		operand_pop();
@@ -788,7 +788,7 @@ void for_statement(int *bsym, int *csym)
 		// 例如：10. JMP SHORT scc_anal.0040125A
 		gen_jmpbackward(for_exit_cond_address);
 		// 执行到了这里，我们来到了循环循环体。我们可以填充循环体的起始地址了。
-		jmpaddr_backstuff(for_body_address, sec_text_opcode_ind);
+		jmpaddr_backstuff(for_body_address, sec_text_opcode_offset);
 		syntax_state = SNTX_LF_HT;
 		skip_token(TK_CLOSEPA);
 	}
@@ -805,7 +805,7 @@ void for_statement(int *bsym, int *csym)
 	// 例如：18. JMP  SHORT scc_anal.0040126B
 	gen_jmpbackward(for_inc_address);
 	// 执行到了这里，我们可以填充循环体的结束地址了。
-	jmpaddr_backstuff(for_end_address, sec_text_opcode_ind);
+	jmpaddr_backstuff(for_end_address, sec_text_opcode_offset);
 	// 这句话好像是多余的。因为b一直是零。而且如果传入0，jmpaddr_backstuff什么都不会做。
 	// jmpaddr_backstuff(for_inc_address, for_exit_cond_address);
 }
@@ -815,13 +815,13 @@ void for_statement(int *bsym, int *csym)
 /*                             <TK_OPENPA><expression><TK_CLOSEPA>      */
 /*                             <statement>                              */
 /************************************************************************/
-void while_statement(int *bsym, int *csym)
+void while_statement(int *break_address, int *continue_address)
 {
 	int while_end_address, while_exit_cond_address;
 	get_token();
 	skip_token(TK_OPENPA);
 	// 现在我们位于while语句的左括号位置。首先记录下while循环退出条件的位置。
-	while_exit_cond_address = sec_text_opcode_ind;
+	while_exit_cond_address = sec_text_opcode_offset;
 	// 初始化循环体结束位置。
 	while_end_address = 0;
 	// Chapter I
@@ -842,7 +842,7 @@ void while_statement(int *bsym, int *csym)
 	gen_jmpbackward(while_exit_cond_address);
 	// 循环体处理完了以后，跳转到循环头。
 	// 执行到了这里，我们可以填充循环体的结束地址了。
-	jmpaddr_backstuff(while_end_address, sec_text_opcode_ind);
+	jmpaddr_backstuff(while_end_address, sec_text_opcode_offset);
 }
 
 /************************************************************************/
@@ -861,14 +861,14 @@ void while_statement(int *bsym, int *csym)
 /*  4. JMP scc_anal.004012B3                                            */
 /* 就是直接跳转到外层for语句的累加处。                                  */
 /************************************************************************/
-void continue_statement(int *csym)
+void continue_statement(int *continue_address)
 {
-	if (!csym)
+	if (!continue_address)
 	{
 		print_error("Can not use continue");
 	}
 	// 生成跳转到外层for语句累加处的汇编代码。
-	* csym = gen_jmpforward(*csym);
+	* continue_address = gen_jmpforward(*continue_address);
 	get_token();
 	syntax_state = SNTX_LF_HT;
 	skip_token(TK_SEMICOLON);
@@ -890,14 +890,14 @@ void continue_statement(int *csym)
 /*  4. JMP scc_anal.0040130D                                            */
 /* 就是直接跳转到外层for语句的循环体结尾处。                            */
 /************************************************************************/
-void break_statement(int *bsym)
+void break_statement(int *break_address)
 {
-	if (!bsym)
+	if (!break_address)
 	{
 		print_error("Can not use break");
 	}
 	// 生成跳转到外层for语句的循环体结尾处的汇编代码。
-	* bsym = gen_jmpforward(*bsym);
+	* break_address = gen_jmpforward(*break_address);
 
 	get_token();
 	syntax_state = SNTX_LF_HT;

@@ -18,7 +18,7 @@ Section *sec_text,			// 代码节
 int nsec_image;				// 映像文件节个数
 
 extern std::vector<TkWord> tktable;
-extern int sec_text_opcode_ind ;	 	// 指令在代码节位置
+extern int sec_text_opcode_offset ;	 	// 指令在代码节位置
 
 int coffsym_search(Section * symtab, char * name);
 char * coffstr_add(Section * strtab, char * name);
@@ -336,7 +336,7 @@ int make_jmpaddr_list(int jmp_addr)
 {
 	int indNew;
 	// 根据指令在代码节位置加4来计算下一个指令的位置。
-	indNew = sec_text_opcode_ind + 4;
+	indNew = sec_text_opcode_offset + 4;
 	// 如果发现溢出，使用新大小从新分配代码节。
 	if (indNew > sec_text->data_allocated)
 	{
@@ -344,11 +344,11 @@ int make_jmpaddr_list(int jmp_addr)
 	}
 	// 把前一跳转指令地址写入代码节位置。
 	// 这个值在if和for的时候为零。而在break, continue, return的时候非零。
-	*(int *)(sec_text->data + sec_text_opcode_ind) = jmp_addr;
+	*(int *)(sec_text->data + sec_text_opcode_offset) = jmp_addr;
 	// 返回值为代码节位置。这句话其实没啥作用。
-	jmp_addr = sec_text_opcode_ind;
+	jmp_addr = sec_text_opcode_offset;
 	// 更新代码节位置。指向下一条指令。
-	sec_text_opcode_ind = indNew;
+	sec_text_opcode_offset = indNew;
 	// 返回值为代码节位置。
 	return jmp_addr;
 }

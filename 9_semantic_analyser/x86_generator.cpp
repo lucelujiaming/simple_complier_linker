@@ -15,7 +15,7 @@
 
 /* 本章用到的全局变量 */
 // int return_symbol_pos;			// 记录return指令位置
-int sec_text_opcode_ind = 0;    // 指令在代码节位置
+int sec_text_opcode_offset = 0;    // 指令在代码节位置
 int function_stack_loc = 0;		// 局部变量在栈中位置。
 								// 因为栈顶是零，这个值基本上一直是一个负数。
 								// 
@@ -575,7 +575,7 @@ void gen_jmpbackward(int target_address)
 	// 首先假设指令在代码节的偏移量为51，也就是sec_text_opcode_ind = 51。
 	// 我想跳转到偏移量28上面，也就是target_address = 28。
 	// 我们需要将两个值相减。同时我们还需要减去JMP指令的机器码本身的大小。
-	displacement = target_address - sec_text_opcode_ind - OPCODE_SIZE_JMP;
+	displacement = target_address - sec_text_opcode_offset - OPCODE_SIZE_JMP;
 	// 8位转移是短转移。短跳转范围是-128-127。
 	if (displacement = (char)displacement)
 	{
@@ -598,7 +598,7 @@ void gen_jmpbackward(int target_address)
 		// Jump short,relative,displacement relative to next instruction
 		gen_opcodeOne(OPCODE_JUMP_NEAR); //(0xe9);
 		// 偏移量 - 32-bit displacement
-		gen_dword(target_address - sec_text_opcode_ind - 4);
+		gen_dword(target_address - sec_text_opcode_offset - 4);
 	}
 }
 
@@ -694,8 +694,8 @@ void gen_prologue(Type *func_type)
 	addr = 8;
 	function_stack_loc  = 0;
 	// 记录了函数体开始，以便函数体结束时填充函数头，因为那时才能确定开辟的栈大小。
-	func_begin_ind = sec_text_opcode_ind;
-	sec_text_opcode_ind += FUNC_PROLOG_SIZE;
+	func_begin_ind = sec_text_opcode_offset;
+	sec_text_opcode_offset += FUNC_PROLOG_SIZE;
 	// 不支持返回结构体，可以返回结构体指针
 	if (sym->typeSymbol.type == T_STRUCT)
 	{
@@ -781,8 +781,8 @@ void gen_epilogue()
 	}
 	reserved_stack_size = calc_align(-function_stack_loc, 4);
 	// 把ind设置为之前记录函数体开始的位置。
-	saved_ind = sec_text_opcode_ind;
-	sec_text_opcode_ind = func_begin_ind;
+	saved_ind = sec_text_opcode_offset;
+	sec_text_opcode_offset = func_begin_ind;
 
 	// 参考PUSH的命令格式在Intel白皮书1633页可以发现：
 	//     50+rd表示是"Push r32."。
@@ -809,7 +809,7 @@ void gen_epilogue()
 	gen_dword(reserved_stack_size);
 
 	// 恢复ind的值。
-	sec_text_opcode_ind = saved_ind;
+	sec_text_opcode_offset = saved_ind;
 }
 
 /***********************************************************
@@ -880,7 +880,7 @@ void gen_call()
 	{
 		// 记录重定位信息
 		coffreloc_add(sec_text, operand_stack_top->sym, 
-			sec_text_opcode_ind + 1, IMAGE_REL_I386_REL32);
+			sec_text_opcode_offset + 1, IMAGE_REL_I386_REL32);
 			
 		// 参考CALL的命令格式在Intel白皮书695页可以发现：
 		//     E8 cd表示是"Call near, relative, displacement relative to next instruction. "。
