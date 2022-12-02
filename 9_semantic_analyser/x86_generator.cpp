@@ -42,7 +42,7 @@ extern Type int_type;			// int类型
 /*             局部变量统一使用disp 8/32[EBP]寻址。                     */
 /*             类型为：e_StorageClass                                   */
 /* sym：       符号指针                                                 */
-/* c：         符号关联值                                               */
+/* value：     符号关联值                                               */
 /************************************************************************/
 /* 阅读这个函数需要仔细研究书上的表8.4。或者查看Intel白皮书509页的      */
 /*     Table 2-1. 16-Bit Addressing Forms with the ModR/M Byte          */
@@ -59,7 +59,7 @@ extern Type int_type;			// int类型
 /*  4. 如果上面的情况都不是，说明是寄存器间接寻址。也就是表格的前八行。 */
 /*     也就是mod = 10。R/M使用参数的值。                                */
 /************************************************************************/
-void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c)
+void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int value)
 {
 	// 生成mod：       Mod R/M[7：6]
 	mod <<= MODRM_MOD_OFFSET; // 6;
@@ -85,14 +85,14 @@ void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c)
 			| reg_opcode); //直接寻址
 		// "disp 32"表示SIB字节后跟随一个32位的偏移量，
 		// 该偏移量被加至有效地址。
-		gen_addr32(r_m, sym, c);
+		gen_addr32(r_m, sym, value);
 	}
 	// 3. 局部变量在栈上，地址使用EBP寻址。 
 	else if ((r_m & SC_VALMASK) == SC_LOCAL)
 	{
 		// 如果是8位寻址就是disp 8[EBP]
 		// mod=01 r=101 disp8[EBP] 89 45 fc MOV DWORD PTR SS:[EBP-4],EAX
-		if (c == c)
+		if (value == (char)value)
 		{
 			// 还是用 char a = g_char; 语句对应的机器码为例：
 			// 	0FBE 0500204000
@@ -103,7 +103,7 @@ void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c)
 					| reg_opcode);
 			// "disp  8"表示SIB字节后跟随一个8位的偏移量，
 			// 该偏移量将被符号扩展，然后被加至有效地址。
-			gen_byte(c);
+			gen_byte(value);
 		}
 		// 如果是32位寻址就是disp 32[EBP]
 		else
@@ -114,7 +114,7 @@ void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c)
 					| reg_opcode);
 			// "disp 32"表示SIB字节后跟随一个32位的偏移量，
 			// 该偏移量被加至有效地址。
-			gen_dword(c);
+			gen_dword(value);
 		}
 	}
 	// 4. 如果上面的情况都不是，说明是寄存器间接寻址。
@@ -268,17 +268,17 @@ void load(int storage_class, Operand * opd)
 /*    3. 对于short和int赋值生成机器码0x89。                             */
 /*    4. 生成后面的部分。                                               */
 /************************************************************************/
-void store(int r, Operand * opd)
+void store(int reg_index, Operand * opd)
 {
-	int fr, bt;
-	fr = opd->storage_class & SC_VALMASK;
-	bt = opd->type.type & T_BTYPE;
+	int opd_storage_class, opd_type;
+	opd_storage_class = opd->storage_class & SC_VALMASK;
+	opd_type          = opd->type.type & T_BTYPE;
 	// 1. 针对short赋值生成前缀0x66。
 	// 用 short b = g_short; 语句对应的机器码为例：
 	// 	0FBF 0502204000
 	//  66: 8945FE
 	// 这里生成上面的第二句中的前缀。这就是66的来源。
-	if (bt == T_SHORT)
+	if (opd_type == T_SHORT)
 	{
 		gen_prefix(OPCODE_STORE_T_SHORT_PREFIX); //Operand-size override, 66H
 	}
@@ -288,7 +288,7 @@ void store(int r, Operand * opd)
 	// 	0FBE05 00204000
 	//  8845 FF
 	// 这里生成上面的第二句。这就是88的来源。
-	if (bt == T_CHAR)
+	if (opd_type == T_CHAR)
 	{
 		// 88 /r	MOV r/m,r8	Move r8 to r/m8
 		gen_opcodeOne(OPCODE_STORE_CHAR_OPCODE);
@@ -306,11 +306,11 @@ void store(int r, Operand * opd)
 	}
 	// 4. 生成后面的部分。
 	// 对于常量，全局变量，函数定义和局部变量，也就是栈中变量，还有左值。
-	if (fr == SC_GLOBAL ||				 // 常量，全局变量，函数定义
-		fr == SC_LOCAL  ||				 // 局部变量，也就是栈中变量
-		(opd->storage_class & SC_LVAL))  // 左值
+	if (opd_storage_class == SC_GLOBAL ||  // 常量，全局变量，函数定义
+		opd_storage_class == SC_LOCAL  ||  // 局部变量，也就是栈中变量
+		(opd->storage_class & SC_LVAL))    // 左值
 	{
-		gen_modrm(ADDR_OTHER, r, opd->storage_class, opd->sym, opd->operand_value);
+		gen_modrm(ADDR_OTHER, reg_index, opd->storage_class, opd->sym, opd->operand_value);
 	}
 
 }
@@ -459,7 +459,7 @@ void gen_opInteger(int op)
 /************************************************************************/
 void gen_opTwoInteger(int reg_code, int op)
 {
-	int dst_storage_class, src_storage_class, c;
+	int dst_storage_class, src_storage_class, value;
 	// 如果栈顶元素不是符号，也就不是全局变量和函数定义，
 	// 而且如果也不是左值。那就只能是常量。
 	if ((operand_stack_top->storage_class & 
@@ -467,8 +467,8 @@ void gen_opTwoInteger(int reg_code, int op)
 	{
 		dst_storage_class = load_one(REG_ANY, operand_stack_last_top);
 		// 如果c是一个8位立即数。
-		c = operand_stack_top->operand_value;
-		if (c == (char)c)
+		value = operand_stack_top->operand_value;
+		if (value == (char)value)
 		{
 			// ADC--Add with Carry			83 /2 ib	ADC r/m32,imm8	Add with CF sign-extended imm8 to r/m32
 			// ADD--Add						83 /0 ib	ADD r/m32,imm8	Add sign-extended imm8 from r/m32
@@ -479,7 +479,7 @@ void gen_opTwoInteger(int reg_code, int op)
 			// 只有第二个字节不同。
 			gen_modrm(ADDR_REG, reg_code, dst_storage_class, NULL, 0);
 			// 最后跟上立即数就好了。
-			gen_byte(c);
+			gen_byte(value);
 		}
 		// 否则就是32位的立即数。
 		else
@@ -489,7 +489,7 @@ void gen_opTwoInteger(int reg_code, int op)
 			// CMP--Compare Two Operands	81 /7 id	CMP r/m32,imm32	Compare imm32 with r/m32
 			gen_opcodeOne(ONE_BYTE_OPCODE_IMME_GRP_TO_IMM32); //(0x81);
 			gen_modrm(ADDR_REG, reg_code, dst_storage_class, NULL, 0);
-			gen_byte(c);
+			gen_byte(value);
 		}
 	}
 	// 如果栈顶元素不是常量，第一个字节就和opc有关系了。
@@ -841,23 +841,25 @@ void gen_addsp(int val)
 /************************************************************************/
 void gen_invoke(int nb_args)
 {
-	int size, r, args_size, i, func_call;
+	int size, reg_idx, args_size, idx, func_call;
 	args_size = 0;
-	// 参数依次入栈
-	for (i = 0; i < nb_args; i++)
+	// 参数依次入栈。
+	// 这里有一个问题。就是我们其实只有四个寄存器。
+	// 如果函数参数多于四个怎么办？？
+	for (idx = 0; idx < nb_args; idx++)
 	{
-		r = load_one(REG_ANY, operand_stack_top);
+		reg_idx = load_one(REG_ANY, operand_stack_top);
 		size =4;
 		// 参考PUSH的命令格式在Intel白皮书1633页可以发现：
 		//     50+rd表示是"Push r32."。
 		// PUSH--Push Word or Doubleword Onto the Stack
 		// 50+rd	PUSH r32	Push r32
 		gen_opcodeOne(OPCODE_PUSH_R32 // 0x50
-						+ r);
+						+ reg_idx);
 		args_size += size;
 		operand_pop();
 	}
-
+	// 将占用的寄存器全部溢出到栈中。
 	spill_regs();
 	func_call = operand_stack_top->type.ref->storage_class;
 	gen_call();
@@ -873,7 +875,7 @@ void gen_invoke(int nb_args)
 /************************************************************************/
 void gen_call()
 {
-	int r;
+	int reg_idx;
 	if (operand_stack_top->storage_class & (SC_VALMASK | SC_LVAL) == SC_GLOBAL)
 	{
 		// 记录重定位信息
@@ -889,13 +891,13 @@ void gen_call()
 	}
 	else
 	{
-		r = load_one(REG_ANY, operand_stack_top);
+		reg_idx = load_one(REG_ANY, operand_stack_top);
 		// 参考CALL的命令格式在Intel白皮书695页可以发现：
 		//     FF /2表示是" Call near, absolute indirect, address given in r/m32."。
         // FF /2 CALL r/m32 Call near, absolute indirect, address given in r/m32
 		gen_opcodeOne(OPCODE_CALL_NEAR_ABSOLUTE); // 0xff);
 		gen_opcodeOne(OPCODE_CALL_NEAR_ABSOLUTE_32_RM32_ADDRESS // 0xd0
-						+ r);
+						+ reg_idx);
 	}
 }
 

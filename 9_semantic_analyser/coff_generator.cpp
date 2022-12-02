@@ -128,19 +128,41 @@ void *mallocz(int size)
 /* 功能:	计算哈希地址                                                */
 /* key:		哈希关键字                                                  */
 /* MAXKEY:	哈希表长度                                                  */
+/*   首先我们的hash结果是一个unsigned int类型的数据：                   */
+/*          0000 0000 0000 0000                                         */
+/*   1. hash左移4位，将key插入。因为一个char有八位。                    */
+/*      这会导致第一个字节的高四位发生进行第一次杂糅。                  */
+/*   2. 这里用bites_mask & 0xf0000000获取了hash的第四个字节的高四位，   */
+/*      并用高四位作为掩码做第二次杂糅。                                */
+/*	                                                                    */
+/*      在这里我们首先声明一下，因为我们的ELF hash强调的是每个字符      */
+/*      都要对最后的结构有影响，所以说我们左移到一定程度是会吞掉        */
+/*	    最高的四位的，所以说我们要将最高的四位先对串产生影响，          */
+/*	    再让他被吞掉，之后的所有的影响都是叠加的，                      */
+/*	    这就是多次的杂糅保证散列均匀，防止出现冲突的大量出现。          */
+/*   3. 将bites_mask右移24位移动到刚才的5-8位那里，                     */
+/*      再对5-8位进行第二次杂糅。                                       */
+/*   4. 我们定时清空高四位，实际上这部操作我们完全没有必要，            */
+/*      但是算法要求，因为我们下一次的左移会自动吞掉这四位。            */
+/*   5. key递增，引入下一个字符进行杂糅。                               */
+/*   6. 返回一个缺失了最高符号位的无符号数                              */
+/*      （为了防止用到了有符号的时候造成的溢出）作为最后的hash值        */
 /************************************************************************/
 int elf_hash(char *key)
 {
-    int h = 0, g;
+    unsigned int hash = 0, bites_mask;
     while (*key) 
 	{
-        h = (h << 4) + *key++;
-        g = h & 0xf0000000;
-        if (g)
-            h ^= g >> 24;
-        h &= ~g;
+        hash = (hash << 4) + *key;          // 1 - 影响高四位，杂糅一次
+        bites_mask = hash & 0xf0000000;     // 2 - 用高四位作为掩码做第二次杂糅
+        if (bites_mask)
+        {
+			hash ^= bites_mask >> 24;       // 3 - 影响4-5位，杂糅一次    
+			hash &= ~bites_mask;            // 4 - 清空高四位
+		}
+		key++;                              // 5 - 引入下一个字符进行杂糅
     }
-    return h % MAXKEY;
+    return hash % MAXKEY;                   // 6 
 }
 
 /************************************************************************/
@@ -405,11 +427,11 @@ void init_coff()
 /************************************************************************/
 void free_sections()
 {
-	int i;
+	int idx;
 	Section * sec;
-	for(i = 0; i < vecSection.size(); i++)
+	for(idx = 0; idx < vecSection.size(); idx++)
 	{
-		sec = &((Section)vecSection[i]);
+		sec = &((Section)vecSection[idx]);
 		if(sec->hashtab != NULL)
 			free(sec->hashtab);
 		free(sec->data);
@@ -438,7 +460,7 @@ void write_obj(char * name)
 {
 	int file_offset;
 	FILE * fout = fopen(name, "wb");
-	int i, sh_size, nsec_obj = 0;
+	int idx, sh_size, nsec_obj = 0;
 	IMAGE_FILE_HEADER *fh;
 	
 	nsec_obj = vecSection.size() -2 ;
@@ -447,9 +469,9 @@ void write_obj(char * name)
 	fpad(fout, file_offset);
 	fh = (IMAGE_FILE_HEADER *)mallocz(sizeof(IMAGE_FILE_HEADER));
 	// Write File Sections
-	for(i = 0; i < nsec_obj; i++)
+	for(idx = 0; idx < nsec_obj; idx++)
 	{
-		Section * sec = &vecSection[i];
+		Section * sec = &vecSection[idx];
 		if(sec->data == NULL)
 			continue;
 		fwrite(sec->data, 1, sec->data_offset, fout);
@@ -464,9 +486,9 @@ void write_obj(char * name)
 	fh->PointerToSymbolTable = sec_symtab->sh.PointerToRawData;
 	fh->NumberOfSymbols = sec_symtab->sh.SizeOfRawData / sizeof(CoffSym);
 	fwrite(fh, 1, sizeof(IMAGE_FILE_HEADER), fout);
-	for (i =0; i < nsec_obj; i++)
+	for (idx =0; idx < nsec_obj; idx++)
 	{
-		Section * sec = &vecSection[i];
+		Section * sec = &vecSection[idx];
 		fwrite(sec->sh.Name, 1, sh_size, fout);
 	}
 	free(fh);

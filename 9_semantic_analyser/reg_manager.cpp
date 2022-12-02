@@ -18,7 +18,7 @@ extern Type char_pointer_type,		// 字符串指针
 int allocate_reg(int reqire_reg)
 {
 	int reg_index = 0;
-	std::vector<Operand>::iterator p;
+	std::vector<Operand>::iterator iter;
 	int used;
 
     /* 查找空闲的寄存器 */
@@ -31,10 +31,10 @@ int allocate_reg(int reqire_reg)
 			// 首先假设没有被使用。
 			used = REG_NOT_USED;
 			// 查找操作数栈
-			for (p = operand_stack.begin(); p != operand_stack_top; p++)
+			for (iter = operand_stack.begin(); iter != operand_stack_top; iter++)
 			{
 				// 如果发现该寄存器已经使用。
-				if ((p->storage_class & SC_VALMASK) == reg_index)
+				if ((iter->storage_class & SC_VALMASK) == reg_index)
 				{
 					used = REG_USED;
 				}
@@ -49,10 +49,10 @@ int allocate_reg(int reqire_reg)
 
     // 如果没有空闲的寄存器，从操作数栈底开始查找到第一个占用的寄存器，
 	// 也就是最早被使用的寄存器。举出到栈中。
-	for (p = operand_stack.begin(); p != operand_stack_top; p++)
+	for (iter = operand_stack.begin(); iter != operand_stack_top; iter++)
 	{
 		// 获得寄存器或存储类型。
-		reg_index = p->storage_class & SC_VALMASK;
+		reg_index = iter->storage_class & SC_VALMASK;
 		if (reg_index < SC_GLOBAL &&			// 如果是寄存器 
 			(reqire_reg & REG_ANY 
 				|| reg_index == reqire_reg))	// 而且符合请求的寄存器类型 
@@ -73,21 +73,22 @@ int allocate_reg(int reqire_reg)
 void spill_reg(char reg_index)
 {
 	int size, align;
-	std::vector<Operand>::iterator p;
+	std::vector<Operand>::iterator iter;
 	Operand opd;
 	Type * type;
 	// 从操作数栈底开始查找到栈顶。
-	for (p = operand_stack.begin(); p != operand_stack_top; p++)
+	for (iter = operand_stack.begin(); 
+		iter != operand_stack_top; iter++)
 	{
 		// 找到第一个占用的寄存器。
-		if ((p->storage_class & SC_VALMASK) == reg_index)
+		if ((iter->storage_class & SC_VALMASK) == reg_index)
 		{
 			// 这一步好像多余了。
-			reg_index = p->storage_class & SC_VALMASK;
+			reg_index = iter->storage_class & SC_VALMASK;
 			// 取出占用寄存器的数据类型。
-			type = &p->type;
+			type = &iter->type;
 			// 左值都是整数类型。
-			if (p->storage_class & SC_LVAL)
+			if (iter->storage_class & SC_LVAL)
 			{
 				type = &int_type;
 			}
@@ -100,18 +101,18 @@ void spill_reg(char reg_index)
 			// 举出到栈中。将寄存器'reg_index'中的值存入操作数'opd'。
 			store(reg_index, &opd);
 			// 如果是左值。
-			if (p->storage_class & SC_LVAL)
+			if (iter->storage_class & SC_LVAL)
 			{
 			    // 标识操作数放在栈中。清除低8位标志的基本类型。保留所有的扩展类型。
 				// 基本类型设置为SC_LLOCAL标志，表明寄存器溢出存放栈中。
-				p->storage_class = (p->storage_class & ~(SC_VALMASK)) | SC_LLOCAL;
+				iter->storage_class = (iter->storage_class & ~(SC_VALMASK)) | SC_LLOCAL;
 			}
 			else
 			{
-				p->storage_class = SC_LOCAL | SC_LVAL;
+				iter->storage_class = SC_LOCAL | SC_LVAL;
 			}
 			// 关联值设定为局部变量在栈中位置。
-			p->operand_value = function_stack_loc;
+			iter->operand_value = function_stack_loc;
 			break;
 		}
 	}
@@ -123,10 +124,10 @@ void spill_reg(char reg_index)
 void spill_regs()
 {
 	int reg_idx;
-	std::vector<Operand>::iterator p;
-	for (p = operand_stack.begin(); p != operand_stack_top; p++)
+	std::vector<Operand>::iterator iter;
+	for (iter = operand_stack.begin(); iter != operand_stack_top; iter++)
 	{
-		reg_idx = p->storage_class & SC_VALMASK;
+		reg_idx = iter->storage_class & SC_VALMASK;
 		if (reg_idx < SC_GLOBAL)
 		{
 			spill_reg(reg_idx);

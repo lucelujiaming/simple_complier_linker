@@ -119,7 +119,7 @@ void store_zero_to_one()
 /************************************************************************/
 void gen_op(int op)
 {
-	int u, btLastTop, btTop;
+	int type_size, btLastTop, btTop;
 	Type typeOne;
 
 	btLastTop = operand_stack_last_top->type.type & T_BTYPE;
@@ -149,14 +149,13 @@ void gen_op(int op)
 				printf("Only support - and >,<,>=.<= \n");
 			}
 			// 取出被操作数的大小。例如char * ptr_one的大小就是1。
-			u = pointed_size(&operand_stack_last_top->type);
+			type_size = pointed_size(&operand_stack_last_top->type);
 			// 生成机器码。
 			gen_opInteger(op);
 			// 两个指针的地址差为整数类型。
 			operand_stack_top->type.type = T_INT;
 			// 结果还需要除以整数大小，也就是4。
-			operand_push(&int_type, SC_GLOBAL, 
-				pointed_size(&operand_stack_last_top->type));
+			operand_push(&int_type, SC_GLOBAL, type_size);
 			gen_op(TK_DIVIDE);
 		}
 		/************************************************************************/

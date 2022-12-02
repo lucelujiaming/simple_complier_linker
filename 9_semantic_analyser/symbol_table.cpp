@@ -168,7 +168,7 @@ Symbol * var_sym_put(Type * type, int storage_class, int token_code, int addr)
  *  sec： 节名称
  *  c：   符号关联值
  **********************************************************/
-Symbol * sec_sym_put(char * sec, int c)
+Symbol * sec_sym_put(char * sec, int related_value)
 {
 	TkWord * tp;
 	Symbol *sym;
@@ -179,7 +179,7 @@ Symbol * sec_sym_put(char * sec, int c)
 	set_current_token_type(tp->tkcode);
 	// s = sym_push(token_type, &typeCurrent, SC_LOCAL, c);
 	sym = sym_push(get_current_token_type(), 
-					&typeCurrent, SC_LOCAL, c);
+					&typeCurrent, SC_LOCAL, related_value);
 	return sym;
 }
 
@@ -240,9 +240,11 @@ Symbol * struct_search(int token_code)
 {
 #if 0
 	printf("\n -- struct_search -- ");
-	for (int i = 42; i < tktable.size(); i++)
+	for (int idx = 42; idx < tktable.size(); idx++)
 	{
-		printf(" (%s, %08X, %08X) ", tktable[i].spelling, tktable[i].sym_struct, tktable[i].sym_identifier);
+		printf(" (%s, %08X, %08X) ", 
+			tktable[idx].spelling, tktable[idx].sym_struct, 
+			tktable[idx].sym_identifier);
 	}
 #endif
 	printf(" ---- \n");
@@ -322,19 +324,19 @@ int type_size(Type * typeCal, int * align)
  * 功能:	返回t所指向的数据类型
  * t:		指针类型
  **********************************************************/
-Type *pointed_type(Type *t)
+Type *pointed_type(Type *typePointer)
 {
-    return &t->ref->typeSymbol;
+    return &typePointer->ref->typeSymbol;
 }
 
 /***********************************************************
  * 功能:	返回t所指向的数据类型尺寸
  * t:		指针类型
  **********************************************************/
-int pointed_size(Type *t)
+int pointed_size(Type *typePointer)
 {
     int align;
-    return type_size(pointed_type(t), &align);
+    return type_size(pointed_type(typePointer), &align);
 }
 
 /*********************************************************** 
@@ -351,12 +353,12 @@ int calc_align(int value , int align)
  * 功能:	生成指针类型
  * t:		原数据类型
  **********************************************************/
-void mk_pointer(Type *t)
+void mk_pointer(Type *typePointer)
 {
 	Symbol *sym;
-    sym = sym_push(SC_ANOM, t, 0, -1);
-    t->type = T_PTR ;
-    t->ref = sym;
+    sym = sym_push(SC_ANOM, typePointer, 0, -1);
+    typePointer->type = T_PTR ;
+    typePointer->ref = sym;
 }
 
 /***********************************************************
@@ -435,9 +437,9 @@ void init_lex()
 
 void print_all_TkWord()
 {
-	for (int i = 0; i < tktable.size(); i++)
+	for (int idx = 0; idx < tktable.size(); idx++)
 	{
-		printf("tktable[%d].spelling = %s \n", i, tktable[i].spelling);
+		printf("tktable[%d].spelling = %s \n", idx, tktable[idx].spelling);
 	}
 }
 

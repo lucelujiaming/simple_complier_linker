@@ -231,17 +231,17 @@ void preprocess()
 
 int look_up(char *token_str)
 {
-  register int i; // ,j;
-  char *p;
+  register int idx; 
+  char *ptr;
 
   /* convert to lowercase */
-  p = token_str;
-  while(*p){ *p = tolower(*p); p++; }
+  ptr = token_str;
+  while(*ptr){ *ptr = tolower(*ptr); ptr++; }
 
   /* see if token is in table */
-  for(i=0; *token_table[i].command; i++)
-      if(!strcmp(token_table[i].command, token_str)) 
-	  	return token_table[i].tok;
+  for(idx=0; *token_table[idx].command; idx++)
+      if(!strcmp(token_table[idx].command, token_str)) 
+	  	return token_table[idx].tok;
   return -1; /* unknown command */
 }
 
@@ -276,7 +276,7 @@ void output_comment_eol()
 void parse_string(char sep)
 {
 	register char *temp;
-	char c;
+	char cTmp;
 	temp=token;
 
 	*temp++ = *(program_buffer)++;
@@ -294,46 +294,46 @@ void parse_string(char sep)
 			program_buffer++;
 			switch(program_buffer[0]) {
 			case '0':
-				c = '\0';
+				cTmp = '\0';
 				break;
 			case 'a':
-				c = '\a';
+				cTmp = '\a';
 				break;
 			case 'b':
-				c = '\b';
+				cTmp = '\b';
 				break;
 			case 't':
-				c = '\t';
+				cTmp = '\t';
 				break;
 			case 'n':
-				c = '\n';
+				cTmp = '\n';
 				break;
 			case 'v':
-				c = '\v';
+				cTmp = '\v';
 				break;
 			case 'f':
-				c = '\f';
+				cTmp = '\f';
 				break;
 			case 'r':
-				c = '\r';
+				cTmp = '\r';
 				break;
 			case '\"':
-				c = '\"';
+				cTmp = '\"';
 				break;
 			case '\'':
-				c = '\'';
+				cTmp = '\'';
 				break;
 			case '\\':
-				c = '\\';
+				cTmp = '\\';
 				break;
 			default:
-				c = program_buffer[0];
-				if (c >= '!' && c <= '~')
+				cTmp = program_buffer[0];
+				if (cTmp >= '!' && cTmp <= '~')
 				{
 					printf("Illegal char");
 				}
 			}
-			// *temp++ = c;
+			// *temp++ = cTmp;
 			*temp++ = program_buffer[0];
 			program_buffer++;
 		}
@@ -557,11 +557,11 @@ void token_init(char * strFilename)
 
 void token_cleanup()
 {
-	int i = 0 ;
+	int idx = 0 ;
 //	printf("\ntoken table has %d tokens", tktable.size());
-//	for(i = 0; i < tktable.size(); i++)
+//	for(idx = 0; idx < tktable.size(); idx++)
 //	{
-//		printf("tktable[%d] = %s \n", i, tktable[i].c_str());
+//		printf("tktable[%d] = %s \n", idx, tktable[i].c_str());
 //	}
 //	free(tktable.data);
 }
@@ -574,20 +574,22 @@ TkWord* tkword_insert(char * strNewToken) // , e_TokenCode tokenCode)
 	TkWord tkWord;
 #if 0
 	printf("\n -- tkword_insert -- ");
-	for (int i = 42; i < tktable.size(); i++)
+	for (int idx = 42; idx < tktable.size(); idx++)
 	{
-		printf(" (%s, %08X, %08X) ", tktable[i].spelling, tktable[i].sym_struct, tktable[i].sym_identifier);
+		printf(" (%s, %08X, %08X) ", 
+			tktable[idx].spelling, tktable[idx].sym_struct, 
+			tktable[idx].sym_identifier);
 	}
 	printf(" ---- \n");
 #else
-	int i = 0;
+	int idx = 0;
 #endif
-	for (i = 0; i < tktable.size(); i++)
+	for (idx = 0; idx < tktable.size(); idx++)
 	{
-		// printf("tktable[%d].spelling = %s \n", i, tktable[i].spelling);
-		if (!strcmp(tktable[i].spelling,strNewToken))
+		// printf("tktable[%d].spelling = %s \n", idx, tktable[idx].spelling);
+		if (!strcmp(tktable[idx].spelling,strNewToken))
 		{
-			return &tktable[i];
+			return &tktable[idx];
 		}
 	}
 	

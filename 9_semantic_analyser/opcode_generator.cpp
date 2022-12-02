@@ -15,9 +15,9 @@ extern int sec_text_opcode_ind ;	 	// 指令在代码节位置
 // Operation generation functions
 /************************************************************************/
 /*  功能：向代码节写人一个字节                                          */
-/*  c：字节值                                                           */
+/*  write_byte：字节值                                                  */
 /************************************************************************/
-void gen_byte(char c)
+void gen_byte(char write_byte)
 {
 	int indNext;
 	indNext = sec_text_opcode_ind + 1;
@@ -28,7 +28,7 @@ void gen_byte(char c)
 		section_realloc(sec_text, indNext);
 	}
 	// 向代码节写人一个字节。
-	sec_text->data[sec_text_opcode_ind] = c;
+	sec_text->data[sec_text_opcode_ind] = write_byte;
 	// 移动写入下标。
 	sec_text_opcode_ind = indNext;
 }
@@ -76,18 +76,19 @@ void gen_dword(unsigned int c)
 
 /************************************************************************/
 /* 功能：生成全局符号地址，并增加COFF重定位记录                         */
-/* r：符号存储类型                                                      */
-/* sym：符号指针                                                        */
-/* c：符号关联值                                                        */
+/* storage_class：符号存储类型                                                      */
+/* sym：          符号指针                                                        */
+/* value：        符号关联值                                                        */
 /************************************************************************/
-void gen_addr32(int r, Symbol * sym, int c)
+void gen_addr32(int storage_class, Symbol * sym, int value)
 {
-	if (r & SC_SYM)
+    // 如果是符号，增加COFF重定位记录
+	if (storage_class & SC_SYM)
 	{
   		coffreloc_add(sec_text, sym, 
 			sec_text_opcode_ind, IMAGE_REL_I386_DIR32);
 	}
-	gen_dword(c);
+	gen_dword(value);
 }
 
 

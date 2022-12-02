@@ -139,23 +139,25 @@ enum e_AddrForm
 
 Symbol * struct_search(int token_code);
 Symbol * sym_search(int token_code);
-void sym_pop(std::vector<Symbol> * pop, Symbol *b);
-Symbol * sym_push(int token_code, Type * type, int r, int c);
+void sym_pop(std::vector<Symbol> * pop, Symbol *new_top);
+Symbol * sym_push(int token_code, Type * type, 
+				int storage_class, int related_value);
 
-Symbol * sym_direct_push(std::vector<Symbol> &sym_stack, int token_code, Type * type, int c);
+Symbol * sym_direct_push(std::vector<Symbol> &sym_stack, 
+				int token_code, Type * type, int related_value);
 Symbol * func_sym_push(int token_code, Type * type);
 
-Symbol * var_sym_put(Type * type, int r, int token_code, int addr);
-Symbol * sec_sym_put(char * sec, int c);
+Symbol * var_sym_put(Type * type, int storage_class, int token_code, int addr);
+Symbol * sec_sym_put(char * sec, int related_value);
 
 void print_all_stack(char* strPrompt);
-void mk_pointer(Type *t);
+void mk_pointer(Type *typePointer);
 
 int type_size(Type * type, int * align);
 int calc_align(int value , int align);
 
-Type *pointed_type(Type *t);
-int pointed_size(Type *t);
+Type *pointed_type(Type *typePointer);
+int pointed_size(Type *typePointer);
 
 void init();
 #endif

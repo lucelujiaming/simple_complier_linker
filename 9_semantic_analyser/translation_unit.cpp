@@ -72,8 +72,8 @@ void print_error(char * strErrInfo)
 
 void print_tab(int nTimes)
 {
-	int n = 0;
-	for (; n < nTimes; n++)
+	int seq = 0;
+	for (; seq < nTimes; seq++)
 	{
 		printf("\t");
 	}
@@ -201,7 +201,7 @@ void direct_declarator(Type * type, int * iTokenTypePtr, int func_call)   // Not
 /* Such as var, var[5], var(), var(int a, int b), var[]                          */ 
 void direct_declarator_postfix(Type * type, int func_call)
 {
-	int n;
+	int array_size;
 	Symbol * symArrayPtr;
 	// <TK_OPENPA><parameter_type_list><TK_CLOSEPA> | <TK_OPENPA><TK_CLOSEPA>
 	// Such as : var(), var(int a, int b)
@@ -214,10 +214,10 @@ void direct_declarator_postfix(Type * type, int func_call)
 	else if(get_current_token_type() == TK_OPENBR)   
 	{
 		get_token();
-		n = -1;
+		array_size = -1;
 		if(get_current_token_type() == TK_CINT)
 		{
-			n = atoi(get_current_token());  // as a TK_CINT
+			array_size = atoi(get_current_token());  // as a TK_CINT
 			get_token();
 			// n = tkvalue;  // ??
 		}
@@ -228,7 +228,7 @@ void direct_declarator_postfix(Type * type, int func_call)
 		skip_token(TK_CLOSEBR);
 		direct_declarator_postfix(type, func_call);    // Nesting calling
 		// 把数组大小保存到符号表中，作为一个匿名符号。
-		symArrayPtr = sym_push(SC_ANOM, type, 0, n);
+		symArrayPtr = sym_push(SC_ANOM, type, 0, array_size);
 		type->type = T_ARRAY | T_PTR;
 		type->ref = symArrayPtr;
 	}
@@ -252,7 +252,7 @@ void direct_declarator_postfix(Type * type, int func_call)
 /**************************************************************************/
 void parameter_type_list(Type * type, int func_call) // (int func_call)
 {
-	int n;
+	int iTokenType;
 	Symbol **lastSymPtr, *sym, *firstSym;
 	Type typeCurrent ;
 	get_token();
@@ -265,8 +265,9 @@ void parameter_type_list(Type * type, int func_call) // (int func_call)
 		{
 			print_error("Invalid type_specifier\n");
 		}
-		declarator(&typeCurrent, &n, NULL);			// Translate one parameter declaration
-		sym = sym_push(n|SC_PARAMS, &typeCurrent, 0, 0);
+		// Translate one parameter declaration
+		declarator(&typeCurrent, &iTokenType, NULL);			
+		sym = sym_push(iTokenType|SC_PARAMS, &typeCurrent, 0, 0);
 		*lastSymPtr = sym;
 		lastSymPtr  = &sym->next;
 		
@@ -339,27 +340,27 @@ void func_body(Symbol * sym)
 
 void print_all_stack(char* strPrompt)
 {
-	int i;
+	int idx;
 	return;
 	printf("\n-------------------%s---------------------------\n", strPrompt);
-	for(i = 0; i < global_sym_stack.size(); ++i)
+	for(idx = 0; idx < global_sym_stack.size(); ++idx)
 	{
-		printf("\t global_sym_stack[%d].TokenType = %08X c = %d type = %d\n", i, 
-			global_sym_stack[i].token_code, 
-			global_sym_stack[i].related_value, 
-			global_sym_stack[i].typeSymbol);
+		printf("\t global_sym_stack[%d].TokenType = %08X value = %d type = %d\n", idx, 
+			global_sym_stack[idx].token_code, 
+			global_sym_stack[idx].related_value, 
+			global_sym_stack[idx].typeSymbol);
 	}
-	for(i = 0; i < local_sym_stack.size(); ++i)
+	for(idx = 0; idx < local_sym_stack.size(); ++idx)
 	{
-		printf("\t  local_sym_stack[%d].TokenType = %08X c = %d type = %d\n", i, 
-			local_sym_stack[i].token_code, 
-			local_sym_stack[i].related_value, 
-			local_sym_stack[i].typeSymbol);
+		printf("\t  local_sym_stack[%d].TokenType = %08X value = %d type = %d\n", idx, 
+			local_sym_stack[idx].token_code, 
+			local_sym_stack[idx].related_value, 
+			local_sym_stack[idx].typeSymbol);
 	}
 	printf("\t tktable.size = %d \n --- ", tktable.size());
-	for (i = 40; i < tktable.size(); i++)
+	for (idx = 40; idx < tktable.size(); idx++)
 	{
-		printf(" %s ", tktable[i].spelling);
+		printf(" %s ", tktable[idx].spelling);
 	}
 	printf(" --- \n----------------------------------------------\n");
 }
@@ -368,10 +369,10 @@ void print_all_stack(char* strPrompt)
 /************************************************************************/
 /* <initializer> ::= <assignment_expression>                            */
 /************************************************************************/
-/* 功能：变量初始化                                                     */
-/* type：变量类型。也就是左值的类型。                                   */
-/* c：   变量相关值。对于全局变量和字符串常量为节内部偏移量。           */
-/* sec： 变量所在节。对于全局变量和字符串常量为相应节地址。             */
+/* 功能： 变量初始化                                                    */
+/* type： 变量类型。也就是左值的类型。                                  */
+/* value：变量相关值。对于全局变量和字符串常量为节内部偏移量。          */
+/* sec：  变量所在节。对于全局变量和字符串常量为相应节地址。            */
 /*                   对于局部变量为NULL。                               */
 /************************************************************************/
 /* 函数逻辑如下：                                                       */
@@ -394,7 +395,7 @@ void print_all_stack(char* strPrompt)
 /*		这导致我们进入initializer函数的if部分。                         */
 /*		把字符串memcpy到节的指定位置。                                  */
 /************************************************************************/
-void initializer(Type * typeToken, int c, Section * sec)
+void initializer(Type * typeToken, int value, Section * sec)
 {
 	// 如果是数据变量的数组初始化。例如我们定义了两个变量，
 	// 当我们解析第二个变量的时候，我们就会进入这个分支：
@@ -404,26 +405,26 @@ void initializer(Type * typeToken, int c, Section * sec)
 	{
 	    // 只需要把右值直接复制到节内部即可。复制后sec->data的内容变成：
 		//   "aSSSSS"
-		memcpy(sec->data + c, get_current_token(), strlen(get_current_token()));
+		memcpy(sec->data + value, get_current_token(), strlen(get_current_token()));
 		get_token();
 	}
 	else
 	{
 		// 解析全局变量，字符串常量和局部变量的右值。
 		assignment_expression();
-		init_variable(typeToken, sec, c); // , 0);
+		init_variable(typeToken, sec, value); // , 0);
 		// get_token can not move here. It only work when token == TK_CSTR
 		// get_token();
 	}
 }
 
 /************************************************************************/
-/* 功能：变量初始化                                                     */
-/* type：变量类型。也就是左值的类型。                                   */
-/* sec： 变量所在节。对于全局变量和字符串常量为相应节地址。             */
+/* 功能： 变量初始化                                                    */
+/* type： 变量类型。也就是左值的类型。                                  */
+/* sec：  变量所在节。对于全局变量和字符串常量为相应节地址。            */
 /*                   对于局部变量为NULL。                               */
-/* c：   变量相关值。对于全局变量和字符串常量为节内部偏移量。           */
-/* v：   变量符号编号。这个值好像没有用。                               */
+/* value：变量相关值。对于全局变量和字符串常量为节内部偏移量。          */
+/* idx：  变量符号编号。这个值好像没有用。                              */
 /************************************************************************/
 /* 这个函数在initializer中，在assignment_expression函数后，被调用。     */
 /* 这里涉及到我们如何理解赋值操作。                                     */
@@ -441,7 +442,7 @@ void initializer(Type * typeToken, int c, Section * sec)
 /*      之后执行operand_swap。让栈顶元素变为右值。次栈顶元素变为左值。  */
 /*      最后调用store_zero_to_one将栈顶右值存入次栈顶左值即可。         */
 /************************************************************************/
-void init_variable(Type * type, Section * sec, int c) // , int v)
+void init_variable(Type * type, Section * sec, int value) // , int idx)
 {
 	// 2022/11/14
 	int bt;
@@ -459,7 +460,7 @@ void init_variable(Type * type, Section * sec, int c) // , int v)
 		// 得到数据类型。
 		bt = type->type & T_BTYPE;
 		// 得到保存全局变量和字符串常量的内存位置。
-		ptr = sec->data + c;
+		ptr = sec->data + value;
 		// 更新节中对应的位置。
 		switch(bt) {
 		case T_CHAR:
@@ -473,7 +474,8 @@ void init_variable(Type * type, Section * sec, int c) // , int v)
 			{
 				if(operand_stack_top->storage_class & SC_SYM)
 				{
-					coffreloc_add(sec, operand_stack_top->sym,c, IMAGE_REL_I386_DIR32);
+					coffreloc_add(sec, 
+						operand_stack_top->sym, value, IMAGE_REL_I386_DIR32);
 				}
 			}
 			*(int *)ptr = operand_stack_top->operand_value;
@@ -488,7 +490,7 @@ void init_variable(Type * type, Section * sec, int c) // , int v)
 		//     char  str1[]  = "str 1";
 		if (type->type & T_ARRAY)
 		{
-			operand_push(type, SC_LOCAL | SC_LVAL, c);
+			operand_push(type, SC_LOCAL | SC_LVAL, value);
 			operand_swap();
 			array_initialize();
 		}
@@ -496,7 +498,7 @@ void init_variable(Type * type, Section * sec, int c) // , int v)
 		{
 			// 对于局部变量，左值就是一个operand_stack元素。只有类型才有用。直接把类型压栈即可。
 			// 在压栈之前，栈顶元素为右值。压栈以后，栈顶元素为左值。和次栈顶元素为右值。
-			operand_push(type, SC_LOCAL | SC_LVAL, c);
+			operand_push(type, SC_LOCAL | SC_LVAL, value);
 			// 交换栈顶元素和次栈顶元素。栈顶元素变为右值。次栈顶元素变为左值。
 			operand_swap();
 			// 将栈顶操作数也就是右值，存入次栈顶操作数，也就是左值中。

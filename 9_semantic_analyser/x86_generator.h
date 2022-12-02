@@ -21,7 +21,7 @@ extern  Section *sec_text,			// ´úÂë½Ú
 
 
 
-void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int c);
+void gen_modrm(int mod, int reg_opcode, int r_m, Symbol * sym, int value);
 void load(int r, Operand * opd);
 void store(int r, Operand * opd);
 void gen_opInteger(int op);
