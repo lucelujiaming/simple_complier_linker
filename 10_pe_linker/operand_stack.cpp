@@ -69,7 +69,7 @@ void check_leftvalue()
     // 如果不是左值就报错。
 	if (!(operand_stack_top->storage_class & SC_LVAL))
 	{
-		print_error("Need left_value");
+		print_error("Need left_value", get_current_token());
 	}
 }
 

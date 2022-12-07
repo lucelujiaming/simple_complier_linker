@@ -64,9 +64,9 @@ Section * allocate_storage(Type * typeCurrent, int storage_class,
 						   e_Sec_Storage sec_area, int token_code, int *addr);
 void init_variable(Type * type, Section * sec, int c); // , int v);
 
-void print_error(char * strErrInfo)
+void print_error(char * strErrInfo, char * subject_str)
 {
-	printf("<ERROR> %s", strErrInfo);
+	printf("<ERROR> '%s' %s", subject_str, strErrInfo);
 	exit(1);
 }
 
@@ -143,7 +143,7 @@ void struct_member_alignment(int * force_align) // (int *fc)
 		}
 		else
 		{
-			print_error("Need intergat\n");
+			print_error("Need intergat\n", get_current_token());
 		}
 		// *fc = token;
 		skip_token(TK_CLOSEPA); 
@@ -189,7 +189,7 @@ void direct_declarator(Type * type, int * iTokenTypePtr, int func_call)   // Not
 	}
 	else
 	{
-		print_error("direct_declarator can not be TK_IDENT\n");
+		print_error("direct_declarator can not be TK_IDENT\n", "");
 	}
 	direct_declarator_postfix(type, func_call);
 }
@@ -223,7 +223,7 @@ void direct_declarator_postfix(Type * type, int func_call)
 		}
 		else
 		{
-			print_error("Need inter\n");
+			print_error("Need inter\n", get_current_token());
 		}
 		skip_token(TK_CLOSEBR);
 		direct_declarator_postfix(type, func_call);    // Nesting calling
@@ -263,7 +263,7 @@ void parameter_type_list(Type * type, int func_call) // (int func_call)
 	{
 		if(!type_specifier(&typeCurrent))
 		{
-			print_error("Invalid type_specifier\n");
+			print_error("Invalid type_specifier\n", get_current_token());
 		}
 		// Translate one parameter declaration
 		declarator(&typeCurrent, &iTokenType, NULL);			
@@ -454,7 +454,8 @@ void init_variable(Type * type, Section * sec, int value) // , int idx)
 		{
 			if ((operand_stack_top->storage_class &(SC_VALMASK | SC_LVAL)) != SC_GLOBAL)
 			{
-				print_error("Use constant to initialize the global variable");
+				print_error("Use constant to initialize the global variable"
+					, get_current_token());
 			}
 		}
 		// 得到数据类型。
@@ -865,7 +866,7 @@ void continue_statement(int *continue_address)
 {
 	if (!continue_address)
 	{
-		print_error("Can not use continue");
+		print_error("Can not use continue", "");
 	}
 	// 生成跳转到外层for语句累加处的汇编代码。
 	* continue_address = gen_jmpforward(*continue_address);
@@ -894,7 +895,7 @@ void break_statement(int *break_address)
 {
 	if (!break_address)
 	{
-		print_error("Can not use break");
+		print_error("Can not use break", "");
 	}
 	// 生成跳转到外层for语句的循环体结尾处的汇编代码。
 	* break_address = gen_jmpforward(*break_address);
@@ -1212,7 +1213,7 @@ void indirection()
 		{
 			return;
 		}
-		print_error("Need pointer");
+		print_error("Need pointer", get_current_token());
 	}
 	// 如果是本地变量，则该变量位于栈上。只需要讲
 	if (operand_stack_top->storage_class & SC_LVAL)
@@ -1308,7 +1309,7 @@ void sizeof_expression()
 	
 	size = type_size(&typeCurrent, &align);
 	if(size < 0)
-		print_error("sizeof failed.");
+		print_error("sizeof failed.", get_current_token());
 	operand_push(&int_type, SC_GLOBAL, size);
 }
 
@@ -1372,7 +1373,7 @@ void postfix_expression()
 
 			if ((operand_stack_top->type.type & T_BTYPE) != T_STRUCT)
 			{
-				print_error("Need struct");
+				print_error("Need struct", get_current_token());
 			}
 			symbol = operand_stack_top->type.ref;
 
@@ -1388,7 +1389,7 @@ void postfix_expression()
 			}
 			if (!symbol)
 			{
-				print_error("Not found");
+				print_error("Not found", get_current_token());
 			}
             /* 成员变量地址 = 结构变量指针 + 成员变量偏移 */
 			/* 成员变量的偏移是指相对于结构体首地址的字节偏移，
@@ -1700,7 +1701,7 @@ void struct_declaration_list(Type * type)
 	sym = type->ref;
 	if (sym->related_value != -1)
 	{
-		print_error("Has defined");
+		print_error("Has defined", get_current_token());
 	}
 	maxalign = 1;
 	symPtr = &sym->next;
@@ -1743,7 +1744,7 @@ void struct_specifier(Type * typeStruct)
 	syntax_indent();
 	if (token_code < TK_IDENT)  // Key word is illegal
 	{
-		print_error("Need struct name\n");
+		print_error("Need struct name\n", get_current_token());
 	}
 	// Adding Symbol operation
 	sym = struct_search(token_code);
@@ -1843,7 +1844,7 @@ void external_declaration(e_StorageClass iSaveType)
 	//    这个类型可以理解为基础类型，因为如果后面跟了*就会变成指针类型。
 	if (!type_specifier(&bTypeCurrent))
 	{
-		print_error("Need type token\n");
+		print_error("Need type token\n", get_current_token());
 	}
 	// 2. 如果前面type_specifier有处理结构体，这时bTypeCurrent.t就会等于T_STRUCT。
 	//    这说明这一次，我们处理完了一个外部声明。我们就返回。
@@ -1866,12 +1867,12 @@ void external_declaration(e_StorageClass iSaveType)
 			// 函数不能是本地的。只能是全局的。
 			if (iSaveType == SC_LOCAL)
 			{
-				print_error("Not nesting function\n");
+				print_error("Not nesting function\n", get_current_token());
 			}
 			// 声明后面跟着括号。必须是函数。否则就报错。
 			if((typeCurrent.type & T_BTYPE) != T_FUNC)
 			{
-				print_error("Needing function defination\n");
+				print_error("Needing function defination\n", get_current_token());
 			}
 			// 5. 如果查找到了这个符号。说明前面进行了函数定义。
 			sym = sym_search(token_code);
@@ -1882,7 +1883,7 @@ void external_declaration(e_StorageClass iSaveType)
 				{
 					char tmpStr[128];
 					sprintf(tmpStr, "Function %s redefination\n", get_current_token());
-					print_error(tmpStr);
+					print_error(tmpStr, get_current_token());
 				}
 				sym->typeSymbol = typeCurrent;
 			}
@@ -2029,7 +2030,7 @@ Section * allocate_storage(Type * typeCurrent, int storage_class,
 			size = type_size(typeCurrent, &align);
 		}
 		else
-			print_error("Unknown size of type");
+			print_error("Unknown size of type", "");
 	}
 
 	// 局部变量在栈中分配存储空间
@@ -2061,7 +2062,7 @@ Section * allocate_storage(Type * typeCurrent, int storage_class,
 		}
 		else
 		{
-			print_error("Illegal section defination");
+			print_error("Illegal section definition", "");
 		}
 		sec->data_offset = calc_align(sec->data_offset, align);
 		*addr = sec->data_offset;

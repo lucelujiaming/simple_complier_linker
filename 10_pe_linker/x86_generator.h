@@ -9,7 +9,7 @@ extern std::vector<Operand> operand_stack;
 extern std::vector<Operand>::iterator operand_stack_top ;
 extern std::vector<Operand>::iterator operand_stack_last_top ;
 
-extern std::vector<Section> vecSection;
+extern std::vector<Section *> vecSection;
 extern  Section *sec_text,			// 代码节
 		*sec_data,			// 数据节
 		*sec_bss,			// 未初始化数据节

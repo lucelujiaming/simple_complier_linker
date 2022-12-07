@@ -5,7 +5,7 @@
 #include <vector>
 
 
-std::vector<Section> vecSection;
+std::vector<Section *> vecSection;
 Section *sec_text,			// 代码节
 		*sec_data,			// 数据节
 		*sec_bss,			// 未初始化数据节
@@ -19,11 +19,6 @@ int nsec_image;				// 映像文件节个数
 
 extern std::vector<TkWord> tktable;
 extern int sec_text_opcode_offset ;	 	// 指令在代码节位置
-
-int coffsym_search(Section * symtab, char * name);
-char * coffstr_add(Section * strtab, char * name);
-void coffreloc_redirect_add(int offset, int cfsym, char section, char type);
-void *mallocz(int size);
 
 /************************************************************************/
 /*  功能:             新建节                                            */
@@ -44,7 +39,7 @@ Section * section_new(char * name, int iCharacteristics)
 	sec->data_allocated = initSize;
 	if(!(iCharacteristics & IMAGE_SCN_LNK_REMOVE))
 		nsec_image++;
-	vecSection.push_back(*sec);
+	vecSection.push_back(sec);
 	return sec;
 }
 
@@ -431,10 +426,11 @@ void free_sections()
 	Section * sec;
 	for(idx = 0; idx < vecSection.size(); idx++)
 	{
-		sec = &((Section)vecSection[idx]);
+		sec = (Section *)vecSection[idx];
 		if(sec->hashtab != NULL)
 			free(sec->hashtab);
 		free(sec->data);
+		free(sec);
 	}
 }
 
@@ -471,7 +467,7 @@ void write_obj(char * name)
 	// Write File Sections
 	for(idx = 0; idx < nsec_obj; idx++)
 	{
-		Section * sec = &vecSection[idx];
+		Section * sec = vecSection[idx];
 		if(sec->data == NULL)
 			continue;
 		fwrite(sec->data, 1, sec->data_offset, fout);
@@ -488,7 +484,7 @@ void write_obj(char * name)
 	fwrite(fh, 1, sizeof(IMAGE_FILE_HEADER), fout);
 	for (idx =0; idx < nsec_obj; idx++)
 	{
-		Section * sec = &vecSection[idx];
+		Section * sec = vecSection[idx];
 		fwrite(sec->sh.Name, 1, sh_size, fout);
 	}
 	free(fh);

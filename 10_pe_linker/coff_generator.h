@@ -74,4 +74,8 @@ void jmpaddr_backstuff(int fill_offset, int jmp_addr);
 
 void *mallocz(int size);
 
+int coffsym_search(Section * symtab, char * name);
+char * coffstr_add(Section * strtab, char * name);
+void coffreloc_redirect_add(int offset, int cfsym, char section, char type);
+
 #endif
