@@ -78,4 +78,5 @@ int coffsym_search(Section * symtab, char * name);
 char * coffstr_add(Section * strtab, char * name);
 void coffreloc_redirect_add(int offset, int cfsym, char section, char type);
 
+void fpad(FILE * fp, int new_pos);
 #endif

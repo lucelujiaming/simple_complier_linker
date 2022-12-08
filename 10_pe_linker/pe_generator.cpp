@@ -1,5 +1,6 @@
 #include "pe_generator.h"
 
+char *entry_symbol = "_entry";
 extern std::vector<Section *> vecSection;
 
 extern Section *sec_text,			// 代码节
@@ -14,6 +15,8 @@ extern Section *sec_text,			// 代码节
 char *lib_path;
 std::vector<std::string> vecDllName;
 std::vector<std::string> vecLib;
+
+short subsystem;
 
 extern int nsec_image;				// 映像文件节个数
 
@@ -513,7 +516,7 @@ void relocate_syms()
 void coff_relocs_fixup()
 {
 	Section * sec, * sr;
-	CoffReloc * rel, rel_end, * qrel;
+	CoffReloc * rel, *rel_end, * qrel;
 	CoffSym * sym;
 	int type, sym_index;
 	char * ptr;
@@ -522,8 +525,168 @@ void coff_relocs_fixup()
 
 	sr = sec_rel;
 	rel_end = (CoffReloc *)(sr->data + sr->data_offset);
-	
+	qrel = (CoffReloc *)sr->data;
+	for (rel = qrel; rel < rel_end; rel++)
+	{
+		sec = (Section *)vecSection[rel->section - 1];
+		sym = &((CoffSym *)sec_symtab->data)[sym_index];
+		name = sec_symtab->link->data + sym->name;
+		val  = sym->coff_sym_value;
+		type = rel->type;
+		addr = sec->sh.VirtualAddress + rel->offset;
+		ptr = sec->data + rel->offset;
+		switch(type) {
+		case IMAGE_REL_I386_DIR32:
+			*(int *)ptr += val;
+			break;
+		case IMAGE_REL_I386_REL32:
+			*(int *)ptr += val - addr;
+			break;
+		default:
+			print_error("Error type ", "");
+			break;
+		}
+	}
 }
+DWORD pe_file_align(DWORD n);
+void pe_set_datadir(int dir, DWORD addr, DWORD size);
+int pe_write(struct PEInfo * pe)
+{
+	int i ;
+	FILE * op;
+	DWORD file_offset, r;
+	int sizeofHeaders;
+
+	op = fopen(pe->filename, "wb");
+	if (NULL == op)
+	{
+		print_error(" generate failed", (char *)pe->filename);
+		return 1;
+	}
+	for (i = 0; i < pe->sec_size; ++i)
+	{
+		Section * sec = pe->secs[i];
+		char * sh_name = (char *)sec->sh.Name;
+		unsigned long addr = sec->sh.VirtualAddress - 
+					nt_header.OptionalHeader.ImageBase;
+		unsigned long size = sec->data_offset;
+		IMAGE_SECTION_HEADER * psh = &sec->sh;
+
+		if (!strcmp((char *)sec->sh.Name, ".text"))
+		{
+			nt_header.OptionalHeader.BaseOfCode = addr;
+			nt_header.OptionalHeader.AddressOfEntryPoint
+				= addr + pe->entry_addr;
+		}
+		else if (!strcmp((char *)sec->sh.Name, ".data"))
+		{
+			nt_header.OptionalHeader.BaseOfData = addr;
+		}
+		else if (!strcmp((char *)sec->sh.Name, ".ldata"))
+		{
+			if (pe->imp_size)
+			{
+				pe_set_datadir(IMAGE_DIRECTORY_ENTRY_IMPORT,
+					pe->imp_offs + addr, pe->imp_size);
+				pe_set_datadir(IMAGE_DIRECTORY_ENTRY_IAT,
+					pe->iat_offs + addr, pe->iat_size);
+			}
+		}
+		strcpy((char *)psh->Name, sh_name);
+		psh->VirtualAddress   = addr;
+		psh->Misc.VirtualSize = size;
+		nt_header.OptionalHeader.SizeOfImage = 
+			pe_virtual_align(size + addr);
+		if (sec->data_offset)
+		{
+			psh->PointerToRawData = r = file_offset;
+			if (!strcmp((char *)sec->sh.Name, ".bss"))
+			{
+				sec->sh.SizeOfRawData = 0;
+				continue;
+			}
+			fwrite(sec->data,1 ,sec->data_offset, op);
+			file_offset = pe_file_align(file_offset + sec->data_offset);
+			psh->SizeOfRawData = file_offset = 1;
+			fpad(op, file_offset);
+		}
+	}
+
+	nt_header.FileHeader.NumberOfSections = pe->sec_size;
+	nt_header.OptionalHeader.SizeOfHeaders = sizeofHeaders;
+
+	nt_header.OptionalHeader.Subsystem = subsystem;
+
+	fseek(op, SEEK_SET, 0);
+	fwrite(&g_dos_header, 1, sizeof(g_dos_header), op);
+	fwrite(&dos_stub, 1, sizeof(dos_stub), op);
+	fwrite(&nt_header, 1, sizeof(nt_header), op);
+	for (i = 0; i, pe->sec_size; ++i)
+	{
+		fwrite(&pe->secs[i]->sh, 1, sizeof(IMAGE_SECTION_HEADER), op);
+	}
+	fclose(op);
+	return 0;
+}
+void get_entry_addr(struct PEInfo * pe);
+int pe_output_file(char * file_name)
+{
+	int ret;
+	struct PEInfo pe;
+
+	memset(&pe, 0, sizeof(pe));
+	pe.imps.reserve(8);
+	pe.filename = file_name;
+	add_runtime_libs();
+
+	get_entry_addr(&pe);
+	ret = resolve_coffsyms(&pe);
+	if (0 == ret)
+	{
+		pe_assign_addresses(&pe);
+		relocate_syms();
+		coff_relocs_fixup();
+		ret = pe_write(&pe);
+		free(pe.secs);
+	}
+	return ret ;
+}
+
+void get_entry_addr(struct PEInfo * pe)
+{
+	unsigned long addr = 0;
+	int cs;
+	CoffSym * cfsym_entry;
+	cs = coffsym_search(sec_symtab, entry_symbol);
+	cfsym_entry = (CoffSym *)sec_symtab->data + cs;
+	addr = cfsym_entry->coff_sym_value;
+	pe->entry_addr = addr;
+}
+
+/***********************************************************
+ * 功能:	计算文件对齐位置
+ * n:		未对齐前位置
+ **********************************************************/	
+DWORD pe_file_align(DWORD n)
+{
+	DWORD FileAlignment = nt_header.OptionalHeader.FileAlignment; //文件中段的对齐粒度
+	return calc_align(n,FileAlignment);
+}
+
+/***********************************************************
+ * 功能:	设置数据目录
+ * dir:		目录类型
+ * addr:	表的RVA
+ * size:	表的大小(以字节计)
+ **********************************************************/	
+void pe_set_datadir(int dir, DWORD addr, DWORD size)
+{
+    nt_header.OptionalHeader.DataDirectory[dir].VirtualAddress = addr;
+    nt_header.OptionalHeader.DataDirectory[dir].Size = size;
+}
+
+
+
 
 /*********************************************************** 
  * 功能:	得到放置静态库的目录
