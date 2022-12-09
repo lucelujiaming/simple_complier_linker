@@ -16,7 +16,8 @@ char *lib_path;
 std::vector<std::string> vecDllName;
 std::vector<std::string> vecLib;
 
-short subsystem;
+short g_subsystem;
+int   g_output_type;				// 输出文件类型
 
 extern int nsec_image;				// 映像文件节个数
 
@@ -529,6 +530,8 @@ void coff_relocs_fixup()
 	for (rel = qrel; rel < rel_end; rel++)
 	{
 		sec = (Section *)vecSection[rel->section - 1];
+
+		sym_index = rel->cfsym;
 		sym = &((CoffSym *)sec_symtab->data)[sym_index];
 		name = sec_symtab->link->data + sym->name;
 		val  = sym->coff_sym_value;
@@ -563,6 +566,12 @@ int pe_write(struct PEInfo * pe)
 		print_error(" generate failed", (char *)pe->filename);
 		return 1;
 	}
+
+	sizeofHeaders = pe_file_align(
+		sizeof(g_dos_header) + 
+		sizeof(dos_stub) + 
+		sizeof(nt_header) +
+		pe->sec_size * sizeof(IMAGE_SECTION_HEADER));
 	for (i = 0; i < pe->sec_size; ++i)
 	{
 		Section * sec = pe->secs[i];
@@ -615,7 +624,7 @@ int pe_write(struct PEInfo * pe)
 	nt_header.FileHeader.NumberOfSections = pe->sec_size;
 	nt_header.OptionalHeader.SizeOfHeaders = sizeofHeaders;
 
-	nt_header.OptionalHeader.Subsystem = subsystem;
+	nt_header.OptionalHeader.Subsystem = g_subsystem;
 
 	fseek(op, SEEK_SET, 0);
 	fwrite(&g_dos_header, 1, sizeof(g_dos_header), op);
@@ -684,9 +693,6 @@ void pe_set_datadir(int dir, DWORD addr, DWORD size)
     nt_header.OptionalHeader.DataDirectory[dir].VirtualAddress = addr;
     nt_header.OptionalHeader.DataDirectory[dir].Size = size;
 }
-
-
-
 
 /*********************************************************** 
  * 功能:	得到放置静态库的目录

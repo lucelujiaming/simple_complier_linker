@@ -160,4 +160,5 @@ Type *pointed_type(Type *typePointer);
 int pointed_size(Type *typePointer);
 
 void init();
+void cleanup();
 #endif

@@ -118,7 +118,7 @@ int load_program(char *p, char *pname)
   FILE *fp = 0 ;
   int i=0;
   
-  if(!(fp=fopen(pname, "r"))){
+  if(!(fp=fopen(pname, "rb"))){
       printf("load_program failed : %s\n", pname);
       return 0;
   }

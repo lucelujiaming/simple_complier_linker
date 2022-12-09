@@ -2,11 +2,13 @@
 //
 
 #include "stdafx.h"
-#include "get_token.h"
+#include "pe_generator.h"
 #include <vector>
 #include "x86_generator.h"
 #include "pe_generator.h"
 
+extern std::vector<std::string> vecDllName;
+extern std::vector<std::string> vecLib;
 
 extern std::vector<Operand> operand_stack;
 extern std::vector<Operand>::iterator operand_stack_top;
@@ -15,7 +17,10 @@ std::vector<Symbol> global_sym_stack;  //全局符号栈
 std::vector<Symbol> local_sym_stack;   //局部符号栈
 
 
+extern int   g_output_type;
+extern short g_subsystem;
 extern std::vector<TkWord> tktable;
+extern std::vector<char *> vecSrcFiles;
 
 Type char_pointer_type,		// 字符串指针
 	 int_type,				// int类型
@@ -448,6 +453,12 @@ void print_all_TkWord()
 
 void init()
 {
+	g_output_type = OUTPUT_EXE;
+	g_subsystem = IMAGE_SUBSYSTEM_WINDOWS_CUI;
+
+	vecSrcFiles.reserve(1);
+	vecLib.reserve(4);
+	vecDllName.reserve(4);
 	operand_stack.reserve(OPSTACK_SIZE);
 	// The begin is reserved
 	operand_stack_top = operand_stack.begin();
@@ -465,6 +476,32 @@ void init()
 
 	init_coff();
 	lib_path = get_lib_path();
+}
+
+void cleanup()
+{
+	int idx;
+	sym_pop(&global_sym_stack, NULL);
+//	for(idx = 0; idx < global_sym_stack.size(); ++idx)
+//	{
+//
+//	}
+	global_sym_stack.clear();
+	local_sym_stack.clear();
+	for(idx = 0; idx < global_sym_stack.size(); ++idx)
+	{
+		// free(global_sym_stack[idx]);
+	}
+	vecSection.clear();
+	
+//	for(idx = 0; idx < global_sym_stack.size(); ++idx)
+//	{
+//
+//	}
+	tktable.clear();
+	vecDllName.clear();
+	vecSrcFiles.clear();
+	vecLib.clear();
 }
 
 //	int main(int argc, char* argv[])

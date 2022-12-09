@@ -7,6 +7,14 @@
 #include "get_token.h"
 #include "translation_unit.h"
 
+/* 输出类型 */
+enum e_OutType
+{	
+    OUTPUT_OBJ,		// 目标文件
+	OUTPUT_EXE,		// EXE可执行文件
+    OUTPUT_MEMORY	// 内存中直接运行，不输出
+};
+
 /* 导入符号内存存储结构 */
 struct ImportSym 
 {
@@ -39,5 +47,6 @@ struct PEInfo
 };
 
 char *get_lib_path();
-
+int load_obj_file(char * file_name);
+int pe_output_file(char * file_name);
 #endif
