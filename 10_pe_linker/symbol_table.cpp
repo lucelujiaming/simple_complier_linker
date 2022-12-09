@@ -13,8 +13,8 @@ extern std::vector<std::string> vecLib;
 extern std::vector<Operand> operand_stack;
 extern std::vector<Operand>::iterator operand_stack_top;
 
-std::vector<Symbol> global_sym_stack;  //全局符号栈
-std::vector<Symbol> local_sym_stack;   //局部符号栈
+std::vector<Symbol *> global_sym_stack;  //全局符号栈
+std::vector<Symbol *> local_sym_stack;   //局部符号栈
 
 
 extern int   g_output_type;
@@ -36,19 +36,20 @@ extern char *lib_path;
  *  type：符号数据类型
  *  related_value：   符号关联值
  **********************************************************/
-Symbol * sym_direct_push(std::vector<Symbol> &sym_stack, int token_code, Type * type, int related_value)
+Symbol * sym_direct_push(std::vector<Symbol *> &sym_stack, int token_code, Type * type, int related_value)
 {
-	Symbol symElement; //, *p;
-	symElement.token_code =token_code;
-	symElement.typeSymbol.type = type->type;
-	symElement.typeSymbol.ref = type->ref;
-	symElement.related_value =related_value;
-	symElement.next = NULL;
-	sym_stack.push_back(symElement);
+	Symbol * symElementPtr = (Symbol *)malloc(sizeof(Symbol)); //, *p;
+    memset(symElementPtr, 0, sizeof(Symbol));
+	symElementPtr->token_code =token_code;
+	symElementPtr->typeSymbol.type = type->type;
+	symElementPtr->typeSymbol.ref = type->ref;
+	symElementPtr->related_value =related_value;
+	symElementPtr->next = NULL;
+	sym_stack.push_back(symElementPtr);
 	// printf("\t ss.size = %d \n", ss.size());
 	if (sym_stack.size() >= 1)
 	{
-		return &sym_stack.back();
+		return sym_stack.back();
 		// return &ss[0];
 	}
 	else
@@ -69,7 +70,6 @@ Symbol * sym_push(int token_code, Type * type, int storage_class, int related_va
 {
 	Symbol *new_symbol_ptr, **tktable_member_pptr;
 	TkWord *ts;
-	// std::vector<Symbol> * ss;
 	// 1. 我们在符号栈中添加一个符号。
 	if(local_sym_stack.size() == 0)
 	{
@@ -203,14 +203,14 @@ Symbol * sec_sym_put(char * sec, int related_value)
  *  p_top：符号栈栈顶
  *  b：    符号指针
  **********************************************************/
-void sym_pop(std::vector<Symbol> * pop, Symbol *new_top)
+void sym_pop(std::vector<Symbol *> * pop, Symbol *new_top)
 {
 	Symbol *sym, **symTktablePtr;
 	TkWord * ts;
 	int token_code;
 
 	// s = &(pop->back());
-	sym = local_sym_stack.end() - 1;
+	sym = *(local_sym_stack.end() - 1);
 	while(sym != new_top)
 	{
 		token_code = sym->token_code;
@@ -229,11 +229,12 @@ void sym_pop(std::vector<Symbol> * pop, Symbol *new_top)
 				tktable[token_code & ~SC_STRUCT].sym_struct, tktable[token_code & ~SC_STRUCT].sym_identifier);
 		}
 		// pop->erase(pop->begin());
+		free(sym);
 		pop->pop_back();
 		if(pop->size() > 0)
 		{
 			// s = &(pop->back());
-			sym = local_sym_stack.end() - 1;
+			sym = *(local_sym_stack.end() - 1);
 		}
 		else
 			break;
@@ -482,15 +483,19 @@ void cleanup()
 {
 	int idx;
 	sym_pop(&global_sym_stack, NULL);
-//	for(idx = 0; idx < global_sym_stack.size(); ++idx)
-//	{
-//
-//	}
-	global_sym_stack.clear();
-	local_sym_stack.clear();
 	for(idx = 0; idx < global_sym_stack.size(); ++idx)
 	{
-		// free(global_sym_stack[idx]);
+		free(global_sym_stack[idx]);
+	}
+	global_sym_stack.clear();
+	for(idx = 0; idx < local_sym_stack.size(); ++idx)
+	{
+		free(local_sym_stack[idx]);
+	}
+	local_sym_stack.clear();
+	for(idx = 0; idx < vecSection.size(); ++idx)
+	{
+		free(vecSection[idx]);
 	}
 	vecSection.clear();
 	

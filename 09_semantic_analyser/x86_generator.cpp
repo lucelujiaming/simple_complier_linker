@@ -699,7 +699,7 @@ void gen_prologue(Type *func_type)
 	// 不支持返回结构体，可以返回结构体指针
 	if (sym->typeSymbol.type == T_STRUCT)
 	{
-		print_error("Can not return T_STRUCT");
+		print_error("Can not return T_STRUCT", get_current_token());
 	}
 	//  如果函数有参数，处理参数定义
 	while ((sym = sym->next) != NULL)

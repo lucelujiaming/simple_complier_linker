@@ -20,5 +20,5 @@ void skip_token(int cTokenCode);
 
 void syntax_indent();
 void translation_unit();
-void print_error(char * strErrInfo);
+void print_error(char * strErrInfo, char * subject_str);
 #endif

@@ -5,7 +5,7 @@
 #include <vector>
 
 
-std::vector<Section> vecSection;
+std::vector<Section *> vecSection;
 Section *sec_text,			// 代码节
 		*sec_data,			// 数据节
 		*sec_bss,			// 未初始化数据节
@@ -44,7 +44,7 @@ Section * section_new(char * name, int iCharacteristics)
 	sec->data_allocated = initSize;
 	if(!(iCharacteristics & IMAGE_SCN_LNK_REMOVE))
 		nsec_image++;
-	vecSection.push_back(*sec);
+	vecSection.push_back(sec);
 	return sec;
 }
 
@@ -378,7 +378,7 @@ void jmpaddr_backstuff(int fill_offset, int jmp_addr)
 /************************************************************************/
 /* *功能:            COFF初始化                                         */
 /* *本函数用到全局变量:                                                 */
-/* Dyn Array sections；       //节数组                                  */
+/* DynArray sections；        //节数组                                  */
 /* Section*sec_text，         //代码节                                  */
 /*         *sec_data，        //数据节                                  */
 /*         *sec_bss，         //未初始化数据节                          */
@@ -431,10 +431,11 @@ void free_sections()
 	Section * sec;
 	for(idx = 0; idx < vecSection.size(); idx++)
 	{
-		sec = &((Section)vecSection[idx]);
+		sec = (Section *)vecSection[idx];
 		if(sec->hashtab != NULL)
 			free(sec->hashtab);
 		free(sec->data);
+		free(sec);
 	}
 }
 
@@ -471,7 +472,7 @@ void write_obj(char * name)
 	// Write File Sections
 	for(idx = 0; idx < nsec_obj; idx++)
 	{
-		Section * sec = &vecSection[idx];
+		Section * sec = vecSection[idx];
 		if(sec->data == NULL)
 			continue;
 		fwrite(sec->data, 1, sec->data_offset, fout);
@@ -488,7 +489,7 @@ void write_obj(char * name)
 	fwrite(fh, 1, sizeof(IMAGE_FILE_HEADER), fout);
 	for (idx =0; idx < nsec_obj; idx++)
 	{
-		Section * sec = &vecSection[idx];
+		Section * sec = vecSection[idx];
 		fwrite(sec->sh.Name, 1, sh_size, fout);
 	}
 	free(fh);

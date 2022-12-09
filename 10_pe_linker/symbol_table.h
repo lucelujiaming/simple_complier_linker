@@ -139,11 +139,11 @@ enum e_AddrForm
 
 Symbol * struct_search(int token_code);
 Symbol * sym_search(int token_code);
-void sym_pop(std::vector<Symbol> * pop, Symbol *new_top);
+void sym_pop(std::vector<Symbol *> * pop, Symbol *new_top);
 Symbol * sym_push(int token_code, Type * type, 
 				int storage_class, int related_value);
 
-Symbol * sym_direct_push(std::vector<Symbol> &sym_stack, 
+Symbol * sym_direct_push(std::vector<Symbol *> &sym_stack, 
 				int token_code, Type * type, int related_value);
 Symbol * func_sym_push(int token_code, Type * type);
 

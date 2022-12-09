@@ -30,8 +30,8 @@ extern std::vector<Operand> operand_stack;
 extern std::vector<Operand>::iterator operand_stack_top;
 extern std::vector<Operand>::iterator operand_stack_last_top;
 
-extern std::vector<Symbol> global_sym_stack;  //全局符号栈
-extern std::vector<Symbol> local_sym_stack;   //局部符号栈
+extern std::vector<Symbol *> global_sym_stack;  //全局符号栈
+extern std::vector<Symbol *> local_sym_stack;   //局部符号栈
 extern std::vector<TkWord> tktable;
 
 extern Type char_pointer_type,		// 字符串指针
@@ -346,16 +346,16 @@ void print_all_stack(char* strPrompt)
 	for(idx = 0; idx < global_sym_stack.size(); ++idx)
 	{
 		printf("\t global_sym_stack[%d].TokenType = %08X value = %d type = %d\n", idx, 
-			global_sym_stack[idx].token_code, 
-			global_sym_stack[idx].related_value, 
-			global_sym_stack[idx].typeSymbol);
+			global_sym_stack[idx]->token_code, 
+			global_sym_stack[idx]->related_value, 
+			global_sym_stack[idx]->typeSymbol);
 	}
 	for(idx = 0; idx < local_sym_stack.size(); ++idx)
 	{
 		printf("\t  local_sym_stack[%d].TokenType = %08X value = %d type = %d\n", idx, 
-			local_sym_stack[idx].token_code, 
-			local_sym_stack[idx].related_value, 
-			local_sym_stack[idx].typeSymbol);
+			local_sym_stack[idx]->token_code, 
+			local_sym_stack[idx]->related_value, 
+			local_sym_stack[idx]->typeSymbol);
 	}
 	printf("\t tktable.size = %d \n --- ", tktable.size());
 	for (idx = 40; idx < tktable.size(); idx++)
@@ -591,7 +591,7 @@ void compound_statement(int * break_address, int * continue_address)
 {
 	Symbol *sym;
 	// s = &(local_sym_stack[0]);
-	sym = local_sym_stack.end() - 1;
+	sym = *(local_sym_stack.end() - 1);
 	// local_sym_stack.erase(&local_sym_stack[0]);
 	// local_sym_stack.erase(local_sym_stack.end() - 1);
 	printf("\t local_sym_stack.size = %d \n", local_sym_stack.size());
