@@ -124,5 +124,4 @@ void compile(char * file_name)
 	get_token();
 	translation_unit();
 	printf("Hello World!\n");
-	free_sections();
 }

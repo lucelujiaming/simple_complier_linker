@@ -180,7 +180,7 @@ int coffsym_add(Section * symtab, char * name, int val, int sec_index,
 	int * hashtab;
 	hashtab = symtab->hashtab;
 	cs = coffsym_search(symtab, name);
-	if(cs = 0)  //
+	if(cs == 0)  //
 	{
 		cfsym = (CoffSym *)section_ptr_add(symtab, sizeof(CoffSym));
 		csname = coffstr_add(strtab, name);

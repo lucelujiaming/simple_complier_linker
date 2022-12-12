@@ -17,7 +17,7 @@ void operand_push(Type* type, int storage_class, int operand_value)
 {
 	if (operand_stack_top == operand_stack.end())
 	{
-		printf("No memory.\n");
+		// printf("No memory.\n");
 	}
 	// Save operand_stack_last_top before
 	operand_stack_last_top = operand_stack_top;

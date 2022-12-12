@@ -224,7 +224,8 @@ int pe_load_lib_file(char * name)
 			{
 				continue;
 			}
-			coffsym_add(sec_dynsymtab, p, vecDllName.size(),
+			int vecDllNameSize = vecDllName.size();
+			coffsym_add(sec_dynsymtab, p, vecDllNameSize,
 				sec_text->index, CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
 		}
 		ret = 0;
@@ -630,7 +631,7 @@ int pe_write(struct PEInfo * pe)
 	fwrite(&g_dos_header, 1, sizeof(g_dos_header), op);
 	fwrite(&dos_stub, 1, sizeof(dos_stub), op);
 	fwrite(&nt_header, 1, sizeof(nt_header), op);
-	for (i = 0; i, pe->sec_size; ++i)
+	for (i = 0; i < pe->sec_size; ++i)
 	{
 		fwrite(&pe->secs[i]->sh, 1, sizeof(IMAGE_SECTION_HEADER), op);
 	}
