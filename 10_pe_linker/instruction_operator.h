@@ -7,6 +7,7 @@ void gen_op(int op);
 // 生成函数调用
 void gen_prologue(Type *func_type);
 void gen_epilogue();
+void gen_invoke(int nb_args);
 // 生成跳转
 void gen_jmpbackward(int target_address);
 int gen_jmpforward(int target_address);

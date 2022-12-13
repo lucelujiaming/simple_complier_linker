@@ -86,7 +86,7 @@ void spill_reg(char reg_index)
 			// 这一步好像多余了。
 			reg_index = iter->storage_class & SC_VALMASK;
 			// 取出占用寄存器的数据类型。
-			type = &iter->type;
+			type = &iter->typeOperand;
 			// 左值都是整数类型。
 			if (iter->storage_class & SC_LVAL)
 			{
@@ -97,7 +97,7 @@ void spill_reg(char reg_index)
 			// 计算局部变量在栈中位置。
 			function_stack_loc = calc_align(function_stack_loc - size, align);
 			// 给opd赋值。
-			operand_assign(&opd, type->type, SC_LOCAL | SC_LVAL, function_stack_loc);
+			operand_assign(&opd, type->typeCode, SC_LOCAL | SC_LVAL, function_stack_loc);
 			// 举出到栈中。将寄存器'reg_index'中的值存入操作数'opd'。
 			store(reg_index, &opd);
 			// 如果是左值。

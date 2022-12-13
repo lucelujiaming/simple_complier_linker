@@ -53,10 +53,12 @@ enum e_StorageClass
 	SC_CMP     = 0x00f3,   		 // 使用标志寄存器
 	SC_VALMASK = 0x00ff,   		 // 存储类型掩码
 
-// 之后的8位和最高的8位用来表示扩展类型。
+// 之后的8位用来表示扩展类型。
 	SC_LVAL    = 0x0100,   		 // 左值
 	SC_SYM     = 0x0200,   		 // 符号
-
+	
+// 最高的8位其实不是e_StorageClass的一部分。而是e_TokenCode类型。用于e_TokenCode的高位。
+// 只不过被放在e_StorageClass里面而已。
 	SC_ANOM	   = 0x10000000,     // 匿名符号
 	SC_STRUCT  = 0x20000000,     // 结构体符号
 	SC_MEMBER  = 0x40000000,     // 结构成员变量
@@ -84,7 +86,7 @@ enum e_TypeCode
 typedef struct structType
 {
     // e_TypeCode t;
-	int    type;
+	int    typeCode;
     struct Symbol *ref;
 } Type;
 
@@ -102,7 +104,7 @@ typedef struct Symbol
 	                            //     如果是结构体，记录结构体的大小。
 	                            //     如果是函数，记录的是符号COFF符号表中序号。
 								//     如果是数组，记录数组元素个数。
-								//     如果是静态字符串。则会被当成数组指针。此时这个的值为-1。
+								//     如果是静态字符串，则会被当成数组指针。此时这个的值为-1。
 								
     Type typeSymbol;			// 符号类型
     struct Symbol *next;		// 关联的其它符号，结构体定义关联成员变量符号，函数定义关联参数符号

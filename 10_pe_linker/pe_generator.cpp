@@ -115,91 +115,11 @@ IMAGE_NT_HEADERS32 nt_header = {
 	}                   
 }; 
 
-int load_obj_file(char * file_name)
-{
-	IMAGE_FILE_HEADER file_header;
-	// Section ** secs;
-	int i, section_header_size, nsec_obj = 0, nSym;
-
-	FILE * file_obj ;
-	CoffSym * cfsyms ;
-	CoffSym * cfsym ;
-
-	char * strs, * cs_name;
-	void * ptr ;
-	int cur_text_offset ;
-	int cur_rel_offset ;
-	int * old_to_new_syms;
-	int cfsym_index;
-
-	CoffReloc * rel, *rel_end;
-
-	section_header_size = sizeof(IMAGE_SECTION_HEADER);
-	file_obj = fopen(file_name, "rb");
-	fread(&file_header, 1, sizeof(IMAGE_FILE_HEADER), file_obj);
-	nsec_obj = file_header.NumberOfSections;
-	// ?????
-	// secs = (Section **)vecSection.data;
-	for (i = 0; i < nsec_obj; i++)
-	{
-		fread(vecSection[i]->sh.Name, 1, section_header_size, file_obj);
-	}
-	// 读取代码节偏移
-	cur_text_offset = sec_text->data_offset;
-	// 读取重定位信息节偏移
-	cur_rel_offset  = sec_rel->data_offset;
-	for (i = 0; i < nsec_obj; i++)
-	{
-		if(!strcmp((char *)vecSection[i]->sh.Name, ".symtab"))
-		{
-			cfsyms = (CoffSym *)mallocz(vecSection[i]->sh.SizeOfRawData);
-			fseek(file_obj, 1, vecSection[i]->sh.PointerToRawData);
-			fread(cfsyms, 1, vecSection[i]->sh.SizeOfRawData, file_obj);
-			nSym = vecSection[i]->sh.SizeOfRawData / sizeof(CoffSym);
-			continue;
-		}
-		else if(!strcmp((char *)vecSection[i]->sh.Name, ".strtab"))
-		{
-			strs = (char *)mallocz(vecSection[i]->sh.SizeOfRawData);
-			fseek(file_obj, 1, vecSection[i]->sh.PointerToRawData);
-			fread(strs, 1, vecSection[i]->sh.SizeOfRawData, file_obj);
-			continue;
-		}
-		else if(!strcmp((char *)vecSection[i]->sh.Name, ".dynsym") ||
-			    !strcmp((char *)vecSection[i]->sh.Name, ".dynstr"))
-		{
-			continue;
-		}
-		fseek(file_obj, SEEK_SET, vecSection[i]->sh.PointerToRawData);
-		ptr = section_ptr_add(vecSection[i], vecSection[i]->sh.SizeOfRawData);
-		fread(ptr, 1, vecSection[i]->sh.SizeOfRawData, file_obj);
-	}
-	old_to_new_syms = (int *)mallocz(sizeof(int) * nSym);
-	for (i = 1; i < nSym; i++)
-	{
-		cfsym = &cfsyms[i];
-		cs_name = strs + cfsym->name;
-		cfsym_index = coffsym_add(sec_symtab, cs_name,
-			cfsym->coff_sym_value, cfsym->shortSection, 
-			cfsym->type,           cfsym->storageClass);
-		old_to_new_syms[i] = cfsym_index;
-	}
-	rel     = (CoffReloc *)(sec_rel->data +cur_rel_offset);
-	rel_end = (CoffReloc *)(sec_rel->data + sec_rel->data_offset);
-	for (; rel < rel_end; rel++)
-	{
-		cfsym_index  = rel->cfsym;
-		rel->cfsym   = old_to_new_syms[cfsym_index];
-		rel->offset += cur_rel_offset;
-	}
-	free(cfsyms);
-	free(strs);
-	free(old_to_new_syms);
-	fclose(file_obj);
-	return 1;
-}
-
 char *get_line(char *line, int size, FILE *fp);
+/***********************************************************
+ * 功能:	加载静态库
+ * name:    静态库文件名,不包括路径和后缀
+ **********************************************************/
 int pe_load_lib_file(char * name)
 {
 	char lib_file[MAX_PATH];
@@ -215,6 +135,7 @@ int pe_load_lib_file(char * name)
 		vecDllName.push_back(std::string(dll_name));
 		for (;;)
 		{
+			// 取出静态库中的一行。
 			p = get_line(line, sizeof(line), fp);
 			if (NULL == p)
 			{
@@ -225,6 +146,7 @@ int pe_load_lib_file(char * name)
 				continue;
 			}
 			int vecDllNameSize = vecDllName.size();
+			// 增加COFF符号
 			coffsym_add(sec_dynsymtab, p, vecDllNameSize,
 				sec_text->index, CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
 		}
@@ -273,7 +195,8 @@ void add_runtime_libs()
 	int pe_type = 0;
 	for (i = 0; i < vecLib.size(); i++)
 	{
-		pe_load_lib_file((char *)vecLib[i].c_str());
+		char* vecLibLine = (char *)vecLib[i].c_str();
+		pe_load_lib_file(vecLibLine);
 	}
 }
 
@@ -295,7 +218,7 @@ int resolve_coffsyms(struct PEInfo * pe)
 		{
 			char * name = 
 				sec_symtab->link->data + sym->name;
-			unsigned short type = sym->type;
+			unsigned short typeFunc = sym->typeFunc;
 			int imp_sym_index = pe_find_import(name);
 			struct ImportSym * import_sym;
 			if (0 == imp_sym_index)
@@ -303,7 +226,7 @@ int resolve_coffsyms(struct PEInfo * pe)
 			import_sym = pe_add_import(pe, imp_sym_index, name);
 			if(!import_sym)
 				found = 0;
-			if (found && type == CST_FUNC)
+			if (found && typeFunc == CST_FUNC)
 			{
 				int offset = import_sym->thk_offset;
 				char buffer[128];
@@ -644,9 +567,10 @@ int pe_output_file(char * file_name)
 	int ret;
 	struct PEInfo pe;
 
-	memset(&pe, 0, sizeof(pe));
+	memset(&pe, 0, sizeof(pe) - sizeof(std::vector<struct ImportInfo *>));
 	pe.imps.reserve(8);
 	pe.filename = file_name;
+	// 添加运行库。
 	add_runtime_libs();
 
 	get_entry_addr(&pe);

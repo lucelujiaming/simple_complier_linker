@@ -122,8 +122,8 @@ void gen_op(int op)
 	int type_size, btLastTop, btTop;
 	Type typeOne;
 
-	btLastTop = operand_stack_last_top->type.type & T_BTYPE;
-	btTop = operand_stack_top->type.type & T_BTYPE;
+	btLastTop = operand_stack_last_top->typeOperand.typeCode & T_BTYPE;
+	btTop = operand_stack_top->typeOperand.typeCode & T_BTYPE;
 
 	// 如果比较的两个元素有一个是指针。
 	if (btLastTop == T_PTR || btTop == T_PTR)
@@ -133,7 +133,7 @@ void gen_op(int op)
 		{
 			// 生成机器码。
 			gen_opInteger(op);
-			operand_stack_top->type.type = T_INT;
+			operand_stack_top->typeOperand.typeCode = T_INT;
 		}
 		// 两个操作数都为指针。说明是求两个指针的地址差。例如：
 		//   char * ptr_one, * ptr_two;
@@ -149,11 +149,11 @@ void gen_op(int op)
 				printf("Only support - and >,<,>=.<= \n");
 			}
 			// 取出被操作数的大小。例如char * ptr_one的大小就是1。
-			type_size = pointed_size(&operand_stack_last_top->type);
+			type_size = pointed_size(&operand_stack_last_top->typeOperand);
 			// 生成机器码。
 			gen_opInteger(op);
 			// 两个指针的地址差为整数类型。
-			operand_stack_top->type.type = T_INT;
+			operand_stack_top->typeOperand.typeCode = T_INT;
 			// 结果还需要除以整数大小，也就是4。
 			operand_push(&int_type, SC_GLOBAL, type_size);
 			gen_op(TK_DIVIDE);
@@ -195,9 +195,9 @@ void gen_op(int op)
 				operand_swap();
 			}
 			// 得到次栈顶元素数组变量的类型，把类型作为一个全局变量压栈。
-			typeOne = operand_stack_last_top->type;
+			typeOne = operand_stack_last_top->typeOperand;
 			operand_push(&int_type, SC_GLOBAL, 
-				pointed_size(&operand_stack_last_top->type));
+				pointed_size(&operand_stack_last_top->typeOperand));
 			
 			// 生成乘法指令。让数组变量的类型乘上栈顶元素数组下标3。
 			// 这样我们就计算出来了数组偏移地址。
@@ -207,7 +207,7 @@ void gen_op(int op)
 			gen_opInteger(op);
             // 变换类型为成员变量数据类型。因为数组是一个指针类型。
 			// 而当我们对于数组取下标以后，我们的类型就变成了数组元素的类型。
-			operand_stack_top->type = typeOne;
+			operand_stack_top->typeOperand = typeOne;
 		}
 	}
 	// 如果都不是指针，那就是数学运算。
@@ -219,7 +219,7 @@ void gen_op(int op)
 		if (op >= TK_EQ && op <= TK_GEQ)   // >,<,>=.<=...
 		{
 			// 关系运算结果为T_INT类型，是整数。
-			operand_stack_top->type.type = T_INT;
+			operand_stack_top->typeOperand.typeCode = T_INT;
 		}
 
 	}

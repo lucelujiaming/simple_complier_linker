@@ -40,10 +40,10 @@ Symbol * sym_direct_push(std::vector<Symbol *> &sym_stack, int token_code, Type 
 {
 	Symbol * symElementPtr = (Symbol *)malloc(sizeof(Symbol)); //, *p;
     memset(symElementPtr, 0, sizeof(Symbol));
-	symElementPtr->token_code =token_code;
-	symElementPtr->typeSymbol.type = type->type;
-	symElementPtr->typeSymbol.ref = type->ref;
-	symElementPtr->related_value =related_value;
+	symElementPtr->token_code          = token_code;
+	symElementPtr->typeSymbol.typeCode = type->typeCode;
+	symElementPtr->typeSymbol.ref      = type->ref;
+	symElementPtr->related_value       = related_value;
 	symElementPtr->next = NULL;
 	sym_stack.push_back(symElementPtr);
 	// printf("\t ss.size = %d \n", ss.size());
@@ -181,7 +181,7 @@ Symbol * sec_sym_put(char * sec, int related_value)
 	TkWord * tp;
 	Symbol *sym;
 	Type typeCurrent;
-	typeCurrent.type = T_INT;
+	typeCurrent.typeCode = T_INT;
 	tp = tkword_insert(sec); // , TK_CINT);
 	// token_type = tp->tkcode ;
 	set_current_token_type(tp->tkcode);
@@ -291,7 +291,7 @@ int type_size(Type * typeCal, int * align)
 	Symbol *sym;
 	int bt;
 	int PTR_SIZE = 4;
-	bt = typeCal->type & T_BTYPE;
+	bt = typeCal->typeCode & T_BTYPE;
 	switch(bt)
 	{
 	case T_STRUCT:
@@ -306,7 +306,7 @@ int type_size(Type * typeCal, int * align)
 		// 2. 一个是数组常量，类似于"Hello world!"这种字符串。
         //    这种情况下，related_value等于-1。直接返回负数。由上层处理。
 		//    因为这种情况下，长度可以通过token直接计算。
-		if(typeCal->type & T_ARRAY)
+		if(typeCal->typeCode & T_ARRAY)
 		{
 			sym = typeCal->ref;
 			return type_size(&sym->typeSymbol, align) * sym->related_value;
@@ -365,9 +365,11 @@ int calc_align(int value , int align)
 void mk_pointer(Type *typePointer)
 {
 	Symbol *sym;
+	// SC_ANOM不是e_StorageClass的一部分。而是e_TokenCode类型。
+	// SC_ANOM只不过是被放在e_StorageClass里面而已。
     sym = sym_push(SC_ANOM, typePointer, 0, -1);
-    typePointer->type = T_PTR ;
-    typePointer->ref = sym;
+    typePointer->typeCode = T_PTR ;
+    typePointer->ref      = sym;
 }
 
 /***********************************************************
@@ -469,11 +471,15 @@ void init()
 	init_lex();
 
 //	sym_sec_rdata = sec_sym_put(".rdata", 0);
-	int_type.type = T_INT;
-	char_pointer_type.type = T_CHAR;
+	int_type.typeCode          = T_INT;
+	char_pointer_type.typeCode = T_CHAR;
 	mk_pointer(&char_pointer_type);
-	default_func_type.type = T_FUNC;
-//	default_func_type.ref =
+	// 这个变量在primary_expression中，当我们调用func_sym_push函数，
+	// 把函数符号放入全局符号表中的时候，作为缺省函数类型。
+	default_func_type.typeCode = T_FUNC;
+	// SC_ANOM不是e_StorageClass的一部分。而是e_TokenCode类型。
+	// SC_ANOM只不过是被放在e_StorageClass里面而已。
+	default_func_type.ref = sym_push(SC_ANOM, &int_type, KW_CDECL, 0);
 
 	init_coff();
 	lib_path = get_lib_path();

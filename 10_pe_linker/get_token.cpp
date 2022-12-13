@@ -455,7 +455,7 @@ int get_token()
     return(token_type = TK_CINT);
   }
 
-  if(isalpha(*(program_buffer))) { /* var or command */
+  if(isalpha(*(program_buffer)) || *(program_buffer) == '_') { /* var or command */
     while(!isdelim(*(program_buffer))) 
 		*temp++=*(program_buffer)++;
     token_type=TK_IDENT;

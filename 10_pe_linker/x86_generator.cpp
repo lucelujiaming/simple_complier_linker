@@ -143,7 +143,7 @@ void load(int storage_class, Operand * opd)
 	int opd_storage_class_val;
 	int opd_type, opd_operand_value, opd_storage_class;
 	opd_storage_class = opd->storage_class;
-	opd_type = opd->type.type;
+	opd_type = opd->typeOperand.typeCode;
 	opd_operand_value = opd->operand_value;
 
 	opd_storage_class_val = opd_storage_class & SC_VALMASK;
@@ -272,7 +272,7 @@ void store(int reg_index, Operand * opd)
 {
 	int opd_storage_class, opd_type;
 	opd_storage_class = opd->storage_class & SC_VALMASK;
-	opd_type          = opd->type.type & T_BTYPE;
+	opd_type          = opd->typeOperand.typeCode & T_BTYPE;
 	// 1. 针对short赋值生成前缀0x66。
 	// 用 short b = g_short; 语句对应的机器码为例：
 	// 	0FBF 0502204000
@@ -697,7 +697,7 @@ void gen_prologue(Type *func_type)
 	func_begin_ind = sec_text_opcode_offset;
 	sec_text_opcode_offset += FUNC_PROLOG_SIZE;
 	// 不支持返回结构体，可以返回结构体指针
-	if (sym->typeSymbol.type == T_STRUCT)
+	if (sym->typeSymbol.typeCode == T_STRUCT)
 	{
 		print_error("Can not return T_STRUCT", get_current_token());
 	}
@@ -709,7 +709,7 @@ void gen_prologue(Type *func_type)
 		// 参数压栈以4字节对齐
 		size = calc_align(size, 4);
 		// 结构体作为指针传递
-		if ((type->type & T_BTYPE) == T_STRUCT)
+		if ((type->typeCode & T_BTYPE) == T_STRUCT)
 		{
 			size = 4;
 		}
@@ -717,6 +717,8 @@ void gen_prologue(Type *func_type)
 		param_addr = addr;
 		addr += size;
 		// 把参数符号放在符号栈
+		// SC_PARAMS不是e_StorageClass的一部分。而是e_TokenCode类型。
+		// SC_PARAMS只不过是被放在e_StorageClass里面而已。
 		sym_push(sym->token_code & ~SC_PARAMS, type,
 			SC_LOCAL | SC_LVAL, param_addr);
 	}
@@ -861,7 +863,7 @@ void gen_invoke(int nb_args)
 	}
 	// 将占用的寄存器全部溢出到栈中。
 	spill_regs();
-	func_call = operand_stack_top->type.ref->storage_class;
+	func_call = operand_stack_top->typeOperand.ref->storage_class;
 	gen_call();
 	if (args_size && func_call != KW_STDCALL)
 	{
@@ -923,7 +925,7 @@ void array_initialize()
 	// 参考MOV的命令格式在Intel白皮书1161页可以发现：
 	//     0x0xB8表示是"Move imm32 to r32."。 
 	gen_opcodeOne(OPCODE_MOVE_IMM32_TO_R32 + REG_ECX);
-	gen_dword(operand_stack_top->type.ref->related_value);
+	gen_dword(operand_stack_top->typeOperand.ref->related_value);
 	
 	/*    MOV ESI,  scc_anal.00403015; ASCII"strl"                          */
 	/*    BE 15304000                                                       */

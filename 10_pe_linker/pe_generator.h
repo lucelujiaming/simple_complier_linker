@@ -47,6 +47,5 @@ struct PEInfo
 };
 
 char *get_lib_path();
-int load_obj_file(char * file_name);
 int pe_output_file(char * file_name);
 #endif

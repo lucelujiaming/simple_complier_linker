@@ -46,12 +46,12 @@ int main(int argc, char* argv[])
 		}
 		else if (!strcmp(ext, "obj"))
 		{
-			load_obj_file(file_name);
+			load_objfile(file_name);
 		}
 	}
 	if (g_output_type == OUTPUT_OBJ)
 	{
-		write_obj(output_file);
+		output_objfile(output_file);
 	}
 	else
 	{

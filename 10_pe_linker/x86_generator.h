@@ -27,7 +27,6 @@ void store(int r, Operand * opd);
 void gen_opInteger(int op);
 void gen_opTwoInteger(int opc, int op);
 void gen_addsp(int val);
-void gen_invoke(int nb_args);
 void gen_call();
 
 #endif

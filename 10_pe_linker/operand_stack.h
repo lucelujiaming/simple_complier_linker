@@ -17,7 +17,7 @@
   
   */
 typedef struct Operand_t{
-	Type type;						// 数据类型
+	Type typeOperand;				// 数据类型
 	unsigned short storage_class;   // 寄存器或存储类型 e_StorageClass
 	
 	int operand_value;				// 关联值，适用于SC_GLOBAL。

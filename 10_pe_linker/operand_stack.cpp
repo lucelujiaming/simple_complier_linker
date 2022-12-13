@@ -23,7 +23,7 @@ void operand_push(Type* type, int storage_class, int operand_value)
 	operand_stack_last_top = operand_stack_top;
 
 	operand_stack_top++;
-	operand_stack_top->type             = *type;
+	operand_stack_top->typeOperand      = *type;
 	operand_stack_top->storage_class    = storage_class;
 	operand_stack_top->operand_value    = operand_value;
 	if (get_current_token())
@@ -89,7 +89,7 @@ void cancel_lvalue()
 /************************************************************************/
 void operand_assign(Operand * opd, int token_code, int storage_class, int operand_value)
 {
-	opd->type.type     = token_code;
-	opd->storage_class = storage_class;
-	opd->operand_value = operand_value;
+	opd->typeOperand.typeCode = token_code;
+	opd->storage_class        = storage_class;
+	opd->operand_value        = operand_value;
 }
