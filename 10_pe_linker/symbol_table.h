@@ -107,7 +107,7 @@ typedef struct Symbol
 								//     如果是静态字符串，则会被当成数组指针。此时这个的值为-1。
 								
     Type typeSymbol;			// 符号类型
-    struct Symbol *next;		// 关联的其它符号，结构体定义关联成员变量符号，函数定义关联参数符号
+    struct Symbol *nextSymbol;	// 关联的其它符号，结构体定义关联成员变量符号，函数定义关联参数符号
     struct Symbol *prev_tok;	// 指向前一定义的同名符号。
 	                            // 例如函数定义中，一个参数会有同名的形参和实参。
 } Symbol;
@@ -125,7 +125,7 @@ typedef struct Symbol
 typedef struct TkWord
 {
     int  tkcode;					// 单词编码
-    struct TkWord *next;			// 指向哈希冲突的其它单词
+    struct TkWord *nextTkWord;		// 指向哈希冲突的其它单词。没有用到
     char *spelling;					// 单词字符串
     struct Symbol *sym_struct;		// 指向单词所表示的结构定义。
                                     // 我们在查找

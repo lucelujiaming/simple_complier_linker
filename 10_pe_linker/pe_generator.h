@@ -18,8 +18,8 @@ enum e_OutType
 /* 导入符号内存存储结构 */
 struct ImportSym 
 {
-    int iat_index;
-    int thk_offset;
+    int iat_index;       // 符号COFF符号表中序号
+    int thk_offset;      // 代码段的缓冲区写入位置。
     IMAGE_IMPORT_BY_NAME imp_sym;
 };
 

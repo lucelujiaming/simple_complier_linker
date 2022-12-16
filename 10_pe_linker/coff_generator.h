@@ -13,6 +13,7 @@ enum e_Sec_Storage{
 	SEC_RDATA_STORAGE = 2
 };
 
+// 写在前面。
 // 这个结构体的设计是基于这样的一个前提。
 // 就是对于不同的节来说，data中保存的内容也不同。例如：
 //     对于代码节来说，  就是一个字节一个字节的机器码。在编译生成代码的时候，通过gen_byte写入。
@@ -31,21 +32,33 @@ typedef struct Section_t{
 	                                  // 一个是在符号表节中，表示这个符号来自于哪个节。
 	                                  // 还有是在重定位信息节中，标识需要重定位数据的节编号。
     struct Section_t * linkSection;   // 关联的其他节，符号节关联字符串节
-    int * hashtab;                    // 哈希表，只用于存储符号表
+    int * sym_hashtab;                // 哈希表，只用于存储符号表。
+		  // 因为对于符号表节来说，保存的是一个一个的CoffSym结构体，也就是一个COFF符号。
+		  // 当符号很多的时候，为了快速找到对应的CoffSym结构体，我们设计了这个哈希表。
+		  // 以便于在coffsym_search中根据名字的哈希值快速找到对应的CoffSym结构体。
+		  // 这个哈希表里每一个元素保存的是CoffSym类型数组下标。
+		  // 例如：sym_hashtab[422] = 5 表明符号表中的第5个COFF符号(CoffSym结构体)
+		  // 的名字"printf"的哈希值为422。
+		  // 这样，当我们查找"printf"这个符号的时候，我们就可以先对"printf"进行哈希，
+		  // 得到这个字符串的哈希值为422，之后直接访问sym_hashtab[422]，得到5。
+		  // 我们就可以知道"printf"这个符号是符号表节中的第5个。
+		  // 但是我们会遇到哈希冲突的情况。这就是CoffSym结构体中nextCoffSymName成员的作用。
     IMAGE_SECTION_HEADER sh;          // 节头
 } Section;
 
-/* COFF符号结构定义。含义参见表7.9 符号表记录成员变量说明 */
+// COFF符号结构定义。含义参见表7.9 符号表记录成员变量说明
+// 对于符号表节来说，里面存放的就是一个个的CoffSym结构体。
+// 这个的定义参考了IMAGE_SYMBOL的定义。
 typedef struct CoffSym
 {
-    DWORD name;                	// 符号名称：字符串表中的一个偏移地址。
+    DWORD coffSymName;          // 符号名称：字符串表中的一个偏移地址。
 								//           这里对符号表记录格式做一个小修改。按照COFF文件规范，
 								//           当符号名小于长度8时，将符号名直接存在ShortName中，
 								//           当大于8时，Short字段为0，Long字段表示了符号名称在字符串表中的偏移位置。
 								//           现在改为无论符号名称长度是否大于8，符号表名称都放在字符串表中，
 								//           name字段表示符号名称在字符串表中的偏移位置，
 								//           新增加的Next字段用来保存哈希冲突链表。
-	DWORD next;					// 用于保存冲突链表
+	DWORD nextCoffSymName;		// 用于保存冲突链表
     /*
     struct {
 		DWORD   Short;			// if 0, use LongName
@@ -105,47 +118,58 @@ typedef struct CoffSym
 /************************************************************************/
 typedef struct CoffReloc
 {
-    DWORD offset;	// 需要进行重定位的代码或数据的地址。
-	                // 这是从节开头算起的偏移，加上节的RVA/Offset域的值，
-    DWORD cfsym;	// 符号表的索引(从0开始)。这个符号给出了用于重定位的地址。
-                    // 如果这个指定符号的存储类别为节，
-					// 那么它的地址就是第一个与它同名的节的地址。
+    DWORD offsetAddr;	// 需要进行重定位的代码或数据的地址。
+	                    // 这是从节开头算起的偏移，加上节的RVA/Offset域的值，
+    DWORD cfsymIndex;	// 符号表的索引(从0开始)。这个符号给出了用于重定位的地址。
+                        // 如果这个指定符号的存储类别为节，
+					    // 那么它的地址就是第一个与它同名的节的地址。
 	// 下面对重定位记录格式做一个小修改，
 	// 将Type这个成员变量的两个字节拆分为两个变量：
 	// 一个字节保存需要重定位数据的节编号；另一个字节存储重定位类型。
-	BYTE  section;  // 需要重定位数据的节编号。
-    BYTE  type;     // 重定位类型。合法的重定位类型依赖于机器类型，
-	                // 请参考表7.13“重定位类型指示符取值”
-					// 基本上只有两种情况。
-					//     IMAGE_REL_I386_DIR32 - 32位绝对定位。
-					//     IMAGE_REL_I386_REL32 - 32位相对定位。
+	BYTE  sectionIndex; // 需要重定位数据的节编号。
+    BYTE  typeReloc;    // 重定位类型。合法的重定位类型依赖于机器类型，
+	                    // 请参考表7.13“重定位类型指示符取值”
+					    // 基本上只有两种情况。
+					    //     IMAGE_REL_I386_DIR32 - 32位绝对定位。
+					    //     IMAGE_REL_I386_REL32 - 32位相对定位。
 } CoffReloc;
 // 参见7.1.4节。例如， 如果节的第一个字节的地址是0xl0，那么第三个字节的地址就是0x12
 
 
+void *mallocz(int size);
+
+// 节空间分配和初始化函数。
+void init_all_sections_and_coffsyms();
+// 节空间释放函数。
+void free_sections();
+// 节数据空间处理函数
 void * section_ptr_add(Section * sec, int increment);
 void section_realloc(Section * sec, int new_size);
-void coffreloc_add(Section * sec, Symbol * sym, int offset, char type);
-int coffsym_add(Section * symtab, char * name, int val, int sec_index,
+
+// 符号表节和动态符号表节操作函数。
+int coffsym_add(Section * symtab, char * coffsym_name, int val, int sec_index,
 		WORD typeFunc, char StorageClass);
 		// short typeFunc, char StorageClass);
 void coffsym_add_update(Symbol *sym, int val, int sec_index,
 		WORD typeFunc, char StorageClass);
 		// short typeFunc, char StorageClass);
+int coffsym_search(Section * symtab, char * coffsym_name);
 
-void init_coff();
-int load_obj_file(char * file_name);
-void output_obj_file(char * name);
-void free_sections();
+// 字符串节操作函数。
+char * coffstr_add(Section * strtab, char * coffstr_name);
+// 重定位节操作函数。
+void coffreloc_add(Section * sec, Symbol * sym, int offset, char type_reloc);
+// 重定位信息节操作函数。
+void coffreloc_redirect_add(int offset, int cfsym_index, char section_index, char type_reloc);
 
+
+// 代码节地址空间处理函数。
 int  make_jmpaddr_list(int jmp_addr);
 void jmpaddr_backstuff(int fill_offset, int jmp_addr);
 
-void *mallocz(int size);
-
-int coffsym_search(Section * symtab, char * name);
-char * coffstr_add(Section * strtab, char * name);
-void coffreloc_redirect_add(int offset, int cfsym, char section, char type);
-
+// COFF持久化函数。
+int load_obj_file(char * file_name);
+void output_obj_file(char * file_name);
 void fpad(FILE * fp, int new_pos);
+
 #endif

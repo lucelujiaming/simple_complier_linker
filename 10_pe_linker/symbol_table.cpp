@@ -44,7 +44,7 @@ Symbol * sym_direct_push(std::vector<Symbol *> &sym_stack, int token_code, Type 
 	symElementPtr->typeSymbol.typeCode = type->typeCode;
 	symElementPtr->typeSymbol.ref      = type->ref;
 	symElementPtr->related_value       = related_value;
-	symElementPtr->next = NULL;
+	symElementPtr->nextSymbol          = NULL;
 	sym_stack.push_back(symElementPtr);
 	// printf("\t ss.size = %d \n", ss.size());
 	if (sym_stack.size() >= 1)
@@ -481,7 +481,7 @@ void init()
 	// SC_ANOM只不过是被放在e_StorageClass里面而已。
 	default_func_type.ref = sym_push(SC_ANOM, &int_type, KW_CDECL, 0);
 
-	init_coff();
+	init_all_sections_and_coffsyms();
 	lib_path = get_lib_path();
 }
 

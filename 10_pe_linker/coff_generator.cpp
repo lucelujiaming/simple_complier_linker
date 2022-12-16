@@ -27,16 +27,16 @@ extern int sec_text_opcode_offset ;	 	// 指令在代码节位置
 /*  返回值:           新增加节                                          */
 /*  nsec_image:       全局变量，映像文件中节个数                        */
 /************************************************************************/
-Section * section_new(char * name, int iCharacteristics)
+Section * section_new(char * section_name, int iCharacteristics)
 {
-	Section * sec;
+	Section * secObj;
 	int initSize = 8;
-	sec = (Section *)mallocz(sizeof(Section));
-	memcpy(sec->sh.Name, name, strlen(name));
-	sec->sh.Characteristics = iCharacteristics;
-	sec->cSectionIndex      = vecSection.size() + 1;  // Start from 1
-	sec->bufferSectionData  = (char *)mallocz(sizeof(char) * initSize);
-	sec->data_allocated     = initSize;
+	secObj = (Section *)mallocz(sizeof(Section));
+	memcpy(secObj->sh.Name, section_name, strlen(section_name));
+	secObj->sh.Characteristics = iCharacteristics;
+	secObj->cSectionIndex      = vecSection.size() + 1;  // Start from 1
+	secObj->bufferSectionData  = (char *)mallocz(sizeof(char) * initSize);
+	secObj->data_allocated     = initSize;
 	// IMAGE_SCN_LNK_REMOVE代表此节不会成为最终形成的映像文件的一部分。
 	// 此标志仅对目标文件合法，
 	// 通过这个标志可判断该节是否需要放人映像文件中，
@@ -44,8 +44,8 @@ Section * section_new(char * name, int iCharacteristics)
 	// 在所有节新建完成后， nsec_image变量记录了映像文件的节个数。
 	if(!(iCharacteristics & IMAGE_SCN_LNK_REMOVE))
 		nsec_image++;
-	vecSection.push_back(sec);
-	return sec;
+	vecSection.push_back(secObj);
+	return secObj;
 }
 
 /************************************************************************/
@@ -100,13 +100,13 @@ void * section_ptr_add(Section * sec, int increment)
 /*  strtab_name:     与符号表相关的字符串表                             */
 /*  返回值:          存储COFF符号表的节                                 */
 /************************************************************************/
-Section * new_coffsym_section(char* symtable_name, int iCharacteristics,
+Section * coffsym_section_new(char* symtable_name, int iCharacteristics,
 		char * strtable_name)
 {
 	Section * sec;
 	sec = section_new(symtable_name, iCharacteristics);
 	sec->linkSection = section_new(strtable_name, iCharacteristics);
-	sec->hashtab     = (int *)mallocz(sizeof(int) * MAXKEY);
+	sec->sym_hashtab = (int *)mallocz(sizeof(int) * MAXKEY);
 	return sec;
 }
 
@@ -170,7 +170,8 @@ int elf_hash(char *key)
 
 /************************************************************************/
 /*  功能:            增加COFF符号                                       */
-/*  symtab:          保存COFF符号表的节                                 */
+/*  symtab:          保存COFF符号表的符号节。                           */
+/*                   只能是sec_symtab或sec_dynsymtab                    */
 /*  name:            符号名称                                           */
 /*  val:             与符号相关的值                                     */
 /*  sec_index:       定义此符号的节                                     */
@@ -178,41 +179,52 @@ int elf_hash(char *key)
 /*  StorageClass:    Coff符号存储类别                                   */
 /*  返回值:          符号COFF符号表中序号                               */
 /************************************************************************/
-int coffsym_add(Section * symtab, char * name, int val, int sec_index,
+int coffsym_add(Section * symtab, char * coffsym_name, int val, int sec_index,
 		WORD typeFunc, char StorageClass)
 {
 	CoffSym * cfsym;
 	int cs, keyno;
 	char * csname;
 	Section * strtab = symtab->linkSection;
-	int * hashtab;
-	hashtab = symtab->hashtab;
-	// 查找是否存在。
-	cs = coffsym_search(symtab, name);
+	int * symtab_hashtable;
+	// 得到符号表的哈希表
+	symtab_hashtable = symtab->sym_hashtab;
+	// 根据符号名称查找是否存在。
+	cs = coffsym_search(symtab, coffsym_name);
 	// 如果不存在，就添加。
 	if(cs == 0)  //
 	{
-		// 扩充CoffSym来容纳数据。
+		// 扩充CoffSym来容纳数据。返回的cfsym指向节数据缓冲区的写入位置。
 		cfsym = (CoffSym *)section_ptr_add(symtab, sizeof(CoffSym));
 		// 增加COFF符号名字符串。
-		csname = coffstr_add(strtab, name);
+		csname = coffstr_add(strtab, coffsym_name);
 		// name字段表示符号名称在字符串表中的偏移位置，因为符号表名称都放在字符串表中。
-		cfsym->name           = csname - strtab->bufferSectionData;
+		cfsym->coffSymName         = csname - strtab->bufferSectionData;
 		// 对于函数表示当前指令在代码节位置。
 		cfsym->coff_sym_value = val;
 		// 节表的索引
 		cfsym->shortSectionNumber   = sec_index;
-		// 表示类型的数字。0x20 - CST_FUNC
+		// 表示类型的数字。0x20 - CST_FUNC, 0x00 - CST_NOTFUNC
 		cfsym->typeFunc             = typeFunc;
-		// 存储类别通常来说都是IMAGE_SYM_CLASS_EXTERNAL，也就是
+		// 存储类别通常来说都是IMAGE_SYM_CLASS_EXTERNAL。
 		cfsym->storageClass         = StorageClass;
-		// 生成哈希值。
-		keyno = elf_hash(name);
-		// 
-		cfsym->next = hashtab[keyno];
-
+		// 根据符号名称生成哈希值。
+		keyno = elf_hash(coffsym_name);
+		// 冲突链表指向keyno对应的哈希表项。
+		// 当没有哈希冲突的时候，symtab_hashtable[keyno]不存在为零。
+		// 这就是为什么COFF符号从1开始的原因。
+		// 当存在哈希冲突的时候，symtab_hashtable[keyno]为和keyno一致的CoffSym类型数组下标。
+		// 我们让nextCoffSymName指向它，记住这个值。并且更新symtab_hashtable[keyno]的值。
+		cfsym->nextCoffSymName = symtab_hashtable[keyno];
+		// 这里有一个技巧，就是我们把节数据缓冲区强转成为CoffSym类型指针。
+		// 也就是强转成为一个CoffSym类型的数组。而cfsym则是指向这个数组一个元素的指针。
+		// 因此上，这里的结算结果就会等于cfsym指向的这个数组元素在整个数组中的下标。
 		cs = cfsym - (CoffSym *)symtab->bufferSectionData;
-		hashtab[keyno] = cs;
+		// 把计算出来的CoffSym类型数组的下标放入哈希表。
+		// symtab_hashtable[keyno]里面原来的值已经被保存在cfsym->nextCoffSymName里面.
+		// 这样，在coffsym_search中，我们就可以找到cs对应的COFF符号。
+		// 并利用nextCoffSymName找到后续冲突元素的下标。
+		symtab_hashtable[keyno] = cs;
 	}
 	return cs;
 }
@@ -220,7 +232,7 @@ int coffsym_add(Section * symtab, char * name, int val, int sec_index,
 /************************************************************************/
 /*  功能:         增加或更新COFF符号，                                  */
 /*                更新只适用于函数先声明后定义的情况                    */
-/*  S:            符号指针                                              */
+/*  sym:          符号指针                                              */
 /*  val:          符号值                                                */
 /*  sec_index:    定义此符号的节                                        */
 /*  typeFunc:     COFF符号类型                                          */
@@ -229,13 +241,16 @@ int coffsym_add(Section * symtab, char * name, int val, int sec_index,
 void coffsym_add_update(Symbol *sym, int val, int sec_index,
 		WORD typeFunc, char StorageClass)
 {
-	char * name;
+	char * coffsym_name;
 	CoffSym *cfsym;
 	if(!sym->related_value)
 	{
-		name = ((TkWord)tktable[sym->token_code]).spelling;
+		// 根据符号的单词编码取出的单词字符串。
+		coffsym_name = ((TkWord)tktable[sym->token_code]).spelling;
+		// 在符号表节sec_symtab中，添加一个符号。
+		// 返回值是符号COFF符号表中序号，放在related_value中。
 		sym->related_value = coffsym_add(sec_symtab, 
-					name, val, sec_index, typeFunc, StorageClass);
+					coffsym_name, val, sec_index, typeFunc, StorageClass);
 	}
 	else
 	{
@@ -247,17 +262,18 @@ void coffsym_add_update(Symbol *sym, int val, int sec_index,
 
 /************************************************************************/
 /*  功能:            增加COFF符号名字符串                               */
-/*  strtab:          保存COFF字符串表的节                               */
+/*  strtab:          保存COFF字符串表的字符串节                         */
+/*                   只能是.strtab或.dynstr                             */
 /*  name:            符号名称字符串                                     */
 /*  返回值:          新增COFF字符串                                     */
 /************************************************************************/
-char * coffstr_add(Section * strtab, char * name)
+char * coffstr_add(Section * strtab, char * coffstr_name)
 {
 	int len;
 	char * pstr;
-	len = strlen(name);
+	len = strlen(coffstr_name);
 	pstr = (char *)section_ptr_add(strtab, len + 1);
-	memcpy(pstr, name, len);
+	memcpy(pstr, coffstr_name, len);
 	return pstr;
 }
 
@@ -275,28 +291,35 @@ char * coffstr_add(Section * strtab, char * name)
 /************************************************************************/
 /*  功能:            查找COFF符号                                       */
 /*  symtab:          保存COFF符号表的节                                 */
+/*                   只能是sec_symtab或sec_dynsymtab                    */
 /*  name:            符号名称                                           */
 /*  返回值:          符号COFF符号表中的序号                             */
 /************************************************************************/
-int coffsym_search(Section * symtab, char * name)
+int coffsym_search(Section * symtab, char * coffsym_name)
 {
 	CoffSym * cfsym;
-	int cs, keyno ;
+	int coffsym_index, keyno ;
 	char * csname ;
 	Section * strtab;
-	
-	keyno  = elf_hash(name);
+	// 生成符号名称对应的哈希值。
+	keyno  = elf_hash(coffsym_name);
+	// 得到符号表对应的字符串表。
 	strtab = symtab->linkSection;
-	cs     = symtab->hashtab[keyno];
-	while(cs)
+	// 得到符号表的哈希表
+	coffsym_index     = symtab->sym_hashtab[keyno];
+	while(coffsym_index)
 	{
-		cfsym  = (CoffSym *)symtab->bufferSectionData + cs;
-		csname = strtab->bufferSectionData + cfsym->name;
-		if(!strcmp(name, csname))
-			return cs;
-		cs = cfsym->next;
+		// 得到节中的CoffSym元素。
+		cfsym  = (CoffSym *)symtab->bufferSectionData + coffsym_index;
+		// 得到字符串表中的字符串。 
+		csname = strtab->bufferSectionData + cfsym->coffSymName;
+		// 如果内容一致，就返回。
+		if(!strcmp(coffsym_name, csname))
+			return coffsym_index;
+		// 哈希冲突的下一个名字在字符串表中的偏移地址。
+		coffsym_index = cfsym->nextCoffSymName;
 	}
-	return cs;
+	return coffsym_index;
 }
 
 /************************************************************************/
@@ -306,37 +329,44 @@ int coffsym_search(Section * symtab, char * name)
 /*  offset:          需要进行重定位的代码或数据在其相应节的偏移位置     */
 /*  type:            重定位类型                                         */
 /************************************************************************/
-void coffreloc_add(Section * sec, Symbol * sym, int offset, char type)
+void coffreloc_add(Section * sec, Symbol * sym, int offset, char type_reloc)
 {
-	int cfsym;
-	char * name;
+	int cfsym_index;
+	char * token_name;
 	// 如果符号表没有对应的关联值，就为其添加。
+	//     定义此符号的节为   - IMAGE_SYM_UNDEFINED
+	//     添加类型为         - CST_FUNC
+	//     COFF符号存储类别为 - IMAGE_SYM_CLASS_EXTERNAL
+	// 
+	// 这个重定位条目，会在resolve_coffsyms中被处理。
 	if(!sym->related_value)
-		coffsym_add_update(sym, 0, 
-			IMAGE_SYM_UNDEFINED, CST_FUNC ,
+	{
+		coffsym_add_update(sym, 0, IMAGE_SYM_UNDEFINED, CST_FUNC, 
 			IMAGE_SYM_CLASS_EXTERNAL);
+	}
 	// 根据符号编码获得单词字符串.
-	name = ((TkWord)tktable[sym->token_code]).spelling;
+	token_name = ((TkWord)tktable[sym->token_code]).spelling;
 	// 根据单词字符串查找COFF符号。
-	cfsym = coffsym_search(sec_symtab, name);
-	coffreloc_redirect_add(offset, cfsym, sec->cSectionIndex, type);
+	cfsym_index = coffsym_search(sec_symtab, token_name);
+	coffreloc_redirect_add(offset, cfsym_index, sec->cSectionIndex, type_reloc);
 }
 
 /************************************************************************/
 /* 功能:            增加COFF重定位信息                                  */
 /* offset:          需要进行重定位的代码或数据在其相应节的偏移位置      */
-/* cf sym:          符号表的索引                                        */
-/* section:         符号所在节                                          */
+/* cfsym:           符号表的索引                                        */
+/* section:         符号所在节的索引                                    */
 /* type:            重定位类型                                          */
 /************************************************************************/
-void coffreloc_redirect_add(int offset, int cfsym, char section, char type)
+void coffreloc_redirect_add(int offset, int cfsym_index, 
+							char section_index, char type_reloc)
 {
 	CoffReloc * rel;
 	rel = (CoffReloc *)section_ptr_add(sec_rel, sizeof(CoffReloc));
-	rel->offset  = offset;
-	rel->cfsym   = cfsym;
-	rel->section = section;
-	rel->type    = type;
+	rel->offsetAddr   = offset;
+	rel->cfsymIndex   = cfsym_index;
+	rel->sectionIndex = section_index;
+	rel->typeReloc    = type_reloc;
 }
 
 /************************************************************************/
@@ -399,16 +429,17 @@ void jmpaddr_backstuff(int fill_offset, int jmp_addr)
 /*         *sec_rdata，       //只读数据节                              */
 /*         *sec_rel，         //重定位信息节                            */
 /*         *sec_symtab，      //符号表节                                */
-/*         *sec_dynsym tab；  //链接库符号节                            */
+/*         *sec_dynsymtab；   //链接库符号节                            */
 /* in tn sec_image；          //映像文件节个数                          */
 /************************************************************************/
-void init_coff()
+void init_all_sections_and_coffsyms()
 {
 	vecSection.reserve(1024);
 	nsec_image = 0 ;
-	
+	// 创建代码节
 	sec_text = section_new(".text",
 			IMAGE_SCN_MEM_EXECUTE | IMAGE_SCN_CNT_CODE);
+	// 创建数据节
 	sec_data = section_new(".data",
 			IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE | 
 	        IMAGE_SCN_CNT_INITIALIZED_DATA);    
@@ -423,9 +454,9 @@ void init_coff()
 	sec_rel = section_new(".rel",
 			IMAGE_SCN_LNK_REMOVE | IMAGE_SCN_MEM_READ);   
 			
-	sec_symtab = new_coffsym_section(".symtab",
+	sec_symtab = coffsym_section_new(".symtab",
 			IMAGE_SCN_LNK_REMOVE | IMAGE_SCN_MEM_READ, ".strtab");  
-	sec_dynsymtab = new_coffsym_section(".dynsym",
+	sec_dynsymtab = coffsym_section_new(".dynsym",
 			IMAGE_SCN_LNK_REMOVE | IMAGE_SCN_MEM_READ, ".dynstr");
 
 	coffsym_add(sec_symtab,    "",       0,                0, CST_NOTFUNC, IMAGE_SYM_CLASS_NULL);
@@ -445,8 +476,8 @@ void free_sections()
 	for(idx = 0; idx < vecSection.size(); idx++)
 	{
 		sec = (Section *)vecSection[idx];
-		if(sec->hashtab != NULL)
-			free(sec->hashtab);
+		if(sec->sym_hashtab != NULL)
+			free(sec->sym_hashtab);
 		free(sec->bufferSectionData);
 		free(sec);
 	}
@@ -579,7 +610,7 @@ int load_obj_file(char * file_name)
 		cfsym = &cfsyms[i];
 		// Name字段表示符号名称在字符串表中的偏移位置。
 		// cs_name指向字符串表中当前的字符串。
-		cs_name = strs + cfsym->name;
+		cs_name = strs + cfsym->coffSymName;
 		// 
 		cfsym_index = coffsym_add(sec_symtab, cs_name,
 			cfsym->coff_sym_value, cfsym->shortSectionNumber, 
@@ -591,9 +622,9 @@ int load_obj_file(char * file_name)
 	rel_end = (CoffReloc *)(sec_rel->bufferSectionData + sec_rel->data_offset);
 	for (; rel < rel_end; rel++)
 	{
-		cfsym_index  = rel->cfsym;
-		rel->cfsym   = old_to_new_syms[cfsym_index];
-		rel->offset += cur_rel_offset;
+		cfsym_index  = rel->cfsymIndex;
+		rel->cfsymIndex   = old_to_new_syms[cfsym_index];
+		rel->offsetAddr  += cur_rel_offset;
 	}
 	free(cfsyms);
 	free(strs);

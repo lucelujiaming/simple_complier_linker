@@ -273,7 +273,7 @@ void parameter_type_list(Type * type, int func_call) // (int func_call)
 		// SC_PARAMS只不过是被放在e_StorageClass里面而已。
 		sym = sym_push(iTokenType|SC_PARAMS, &typeCurrent, 0, 0);
 		*lastSymPtr = sym;
-		lastSymPtr  = &sym->next;
+		lastSymPtr  = &sym->nextSymbol;
 		
 		if(get_current_token_type() == TK_CLOSEPA) // We encounter the ) after one parameter
 		{
@@ -297,9 +297,9 @@ void parameter_type_list(Type * type, int func_call) // (int func_call)
 	// SC_ANOM不是e_StorageClass的一部分。而是e_TokenCode类型。
 	// SC_ANOM只不过是被放在e_StorageClass里面而已。
 	sym = sym_push(SC_ANOM, type, func_call, 0);
-	sym->next      = firstSym;
-	type->typeCode = T_FUNC;
-	type->ref      = sym;
+	sym->nextSymbol  = firstSym;
+	type->typeCode   = T_FUNC;
+	type->ref        = sym;
 }
 
 // ------------------ func_body 
@@ -1389,7 +1389,7 @@ void postfix_expression()
 			// SC_MEMBER只不过是被放在e_StorageClass里面而已。
 			set_current_token_type(get_current_token_type() | SC_MEMBER);
 			
-			while ((symbol = symbol->next) != NULL)
+			while ((symbol = symbol->nextSymbol) != NULL)
 			{
 				if (symbol->related_value == get_current_token_type())
 				{
@@ -1638,7 +1638,7 @@ void argument_expression_list()
 	int nb_args = 0;
 	s = operand_stack_top->typeOperand.ref;
 	get_token();
-	sa = s->next;
+	sa = s->nextSymbol;
 	ret.typeOperand  = s->typeSymbol;
 	ret.storage_class = REG_IRET;
 	ret.operand_value = 0;
@@ -1650,7 +1650,7 @@ void argument_expression_list()
 			nb_args++;
 			if (sa)
 			{
-				sa = sa->next;
+				sa = sa->nextSymbol;
 			}
 			if(get_current_token_type() == TK_CLOSEPA)
 				break;
@@ -1704,7 +1704,7 @@ void struct_member_declaration(int * maxalign, int * offset, Symbol *** ps)
 		struct_symbol = sym_push(token_code | SC_MEMBER, &typeOne, 0, *offset);
 		*offset += size;
 		**ps = struct_symbol;
-		*ps = &struct_symbol->next;
+		*ps = &struct_symbol->nextSymbol;
 		// end of Adding Symbol operation
 
 		if (get_current_token_type() == TK_SEMICOLON)
@@ -1735,7 +1735,7 @@ void struct_declaration_list(Type * type)
 		print_error("Has defined", get_current_token());
 	}
 	maxalign = 1;
-	symPtr = &sym->next;
+	symPtr = &sym->nextSymbol;
 	offset = 0 ;
 	// end of Adding Symbol operation
 	while (get_current_token_type() != TK_END)  // } 右大括号
@@ -1775,7 +1775,7 @@ void struct_specifier(Type * typeStruct)
 	syntax_indent();
 	if (token_code < TK_IDENT)  // Key word is illegal
 	{
-		print_error("Need struct name\n", get_current_token());
+		print_error("Need struct_name\n", get_current_token());
 	}
 	// Adding Symbol operation
 	sym = struct_search(token_code);
@@ -1987,7 +1987,7 @@ void external_declaration(e_StorageClass iSaveType)
 				//   (2) 将全局变量放人COFF符号表。
 			    if (iSaveType == SC_GLOBAL)
 			    {
-				    coffsym_add_update(sym, addr, sec->index, 
+				    coffsym_add_update(sym, addr, sec->cSectionIndex, 
 						CST_NOTFUNC, IMAGE_SYM_CLASS_EXTERNAL);
 			    }
 				//   (3) 对声明时进行赋值的变量进行初始化。

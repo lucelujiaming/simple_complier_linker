@@ -702,7 +702,7 @@ void gen_prologue(Type *func_type)
 		print_error("Can not return T_STRUCT", get_current_token());
 	}
 	//  如果函数有参数，处理参数定义
-	while ((sym = sym->next) != NULL)
+	while ((sym = sym->nextSymbol) != NULL)
 	{
 		type = &sym->typeSymbol;
 		size = type_size(type, &align);
@@ -864,6 +864,7 @@ void gen_invoke(int nb_args)
 	// 将占用的寄存器全部溢出到栈中。
 	spill_regs();
 	func_call = operand_stack_top->typeOperand.ref->storage_class;
+	// 生成函数调用指令
 	gen_call();
 	if (args_size && func_call != KW_STDCALL)
 	{
@@ -878,9 +879,11 @@ void gen_invoke(int nb_args)
 void gen_call()
 {
 	int reg_idx;
-	if (operand_stack_top->storage_class & (SC_VALMASK | SC_LVAL) == SC_GLOBAL)
+	// 如果是一个全局变量，而且不是左值。
+	// 那就可以是符号，也就是全局变量和函数定义，或者是常量。
+	if ((operand_stack_top->storage_class & (SC_VALMASK | SC_LVAL)) == SC_GLOBAL)
 	{
-		// 记录重定位信息
+		// 记录重定位信息。
 		coffreloc_add(sec_text, operand_stack_top->sym, 
 			sec_text_opcode_offset + 1, IMAGE_REL_I386_REL32);
 			
