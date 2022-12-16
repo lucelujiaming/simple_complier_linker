@@ -28,7 +28,7 @@ void gen_byte(char write_byte)
 		section_realloc(sec_text, indNext);
 	}
 	// 向代码节写人一个字节。
-	sec_text->data[sec_text_opcode_offset] = write_byte;
+	sec_text->bufferSectionData[sec_text_opcode_offset] = write_byte;
 	// 移动写入下标。
 	sec_text_opcode_offset = indNext;
 }

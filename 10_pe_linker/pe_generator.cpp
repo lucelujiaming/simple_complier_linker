@@ -124,7 +124,7 @@ int pe_load_lib_file(char * name)
 {
 	char lib_file[MAX_PATH];
 	int ret = -1;
-	char line[512], *dll_name, *p;
+	char lib_line[512], *dll_name, *pTrimedLibLinePtr;
 	FILE * fp;
 	sprintf(lib_file, "%s%s.slib", lib_path, name);
 	fp = fopen(lib_file, "rb");
@@ -135,20 +135,20 @@ int pe_load_lib_file(char * name)
 		vecDllName.push_back(std::string(dll_name));
 		for (;;)
 		{
-			// 取出静态库中的一行。
-			p = get_line(line, sizeof(line), fp);
-			if (NULL == p)
+			// 取出静态库中的一行。并取出无用字符。
+			pTrimedLibLinePtr = get_line(lib_line, sizeof(lib_line), fp);
+			if (NULL == pTrimedLibLinePtr)
 			{
 				break;
 			}
-			if (0 == *p || ';' == *p)
+			if (0 == *pTrimedLibLinePtr || ';' == *pTrimedLibLinePtr)
 			{
 				continue;
 			}
 			int vecDllNameSize = vecDllName.size();
 			// 增加COFF符号
-			coffsym_add(sec_dynsymtab, p, vecDllNameSize,
-				sec_text->index, CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
+			coffsym_add(sec_dynsymtab, pTrimedLibLinePtr, vecDllNameSize,
+				sec_text->cSectionIndex, CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
 		}
 		ret = 0;
 		if (fp)
@@ -209,15 +209,17 @@ int resolve_coffsyms(struct PEInfo * pe)
 	int sym_index, sym_end ;
 	int ret = 0;
 	int found = 1;
-
+	// 得到符号节中，符号的个数。
 	sym_end = sec_symtab->data_offset / sizeof(CoffSym);
+	// 符号从1开始，因为第0个符号为空。
 	for (sym_index = 1; sym_index < sym_end; sym_index++)
 	{
-		sym = (CoffSym *)sec_symtab->data + sym_index;
-		if(sym->shortSection == IMAGE_SYM_UNDEFINED)
+		sym = (CoffSym *)sec_symtab->bufferSectionData + sym_index;
+		// 如果是一个未定义符号。
+		if(sym->shortSectionNumber == IMAGE_SYM_UNDEFINED)
 		{
 			char * name = 
-				sec_symtab->link->data + sym->name;
+				sec_symtab->linkSection->bufferSectionData + sym->name;
 			unsigned short typeFunc = sym->typeFunc;
 			int imp_sym_index = pe_find_import(name);
 			struct ImportSym * import_sym;
@@ -235,10 +237,10 @@ int resolve_coffsyms(struct PEInfo * pe)
 				*retTmp = 0x25FF;
 				sprintf(buffer, "IAT.%s", name);
 				import_sym->iat_index = coffsym_add(sec_symtab, 
-					buffer, 0, sec_idata->index,
+					buffer, 0, sec_idata->cSectionIndex,
 					CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
 				coffreloc_redirect_add(offset + 2,
-					import_sym->iat_index, sec_text->index,
+					import_sym->iat_index, sec_text->cSectionIndex,
 					IMAGE_REL_I386_DIR32);
 				import_sym->thk_offset = offset;
 			}
@@ -266,7 +268,7 @@ struct ImportSym * pe_add_import(struct PEInfo * pe,
 	int dll_index;
 	struct ImportInfo *p;
 	struct ImportSym  *s;
-	dll_index = ((CoffSym *)sec_dynsymtab->data + sym_index)->coff_sym_value;
+	dll_index = ((CoffSym *)sec_dynsymtab->bufferSectionData + sym_index)->coff_sym_value;
 	if (0 == dll_index)
 		return NULL;
 	if (pe->imps.size() > dll_index)
@@ -296,12 +298,18 @@ struct ImportSym * pe_add_import(struct PEInfo * pe,
 	
 DWORD pe_virtual_align(DWORD n);
 void pe_build_imports(struct PEInfo * pe);
+/***********************************************************
+ * 功能:	计算节区的RVA地址
+ * pe:		PE信息存储结构指针
+ **********************************************************/
 int pe_assign_addresses(struct PEInfo * pe)
 {
 	int i ;
 	DWORD addr ;
 	Section *sec, **ps;
+	// 
 	pe->thunk = sec_idata;
+	// 
 	pe->secs = (Section **)mallocz(nsec_image * sizeof(Section *));
 	addr = nt_header.OptionalHeader.ImageBase+1;
 	for (i = 0; i < nsec_image; ++i)
@@ -369,7 +377,7 @@ void pe_build_imports(struct PEInfo * pe)
 		p->imphdr.FirstThunk         = thk_ptr + rva_base;
 		p->imphdr.OriginalFirstThunk = ent_ptr + rva_base;
 		p->imphdr.Name               = v       + rva_base;
-		memcpy(pe->thunk->data + dll_ptr, 
+		memcpy(pe->thunk->bufferSectionData + dll_ptr, 
 			&p->imphdr, sizeof(IMAGE_IMPORT_DESCRIPTOR));
 
 		for (k = 0, n = p->imp_syms.size(); k <= n; ++k)
@@ -379,10 +387,10 @@ void pe_build_imports(struct PEInfo * pe)
 				struct ImportSym * import_sym = (struct ImportSym *)
 					p->imp_syms[k];
 				DWORD iat_index = import_sym->iat_index;
-				CoffSym * org_sym = (CoffSym *)sec_symtab->data + iat_index;
+				CoffSym * org_sym = (CoffSym *)sec_symtab->bufferSectionData + iat_index;
 
-				org_sym->coff_sym_value = thk_ptr;
-				org_sym->shortSection   = pe->thunk->index;
+				org_sym->coff_sym_value       = thk_ptr;
+				org_sym->shortSectionNumber   = pe->thunk->cSectionIndex;
 				v = pe->thunk->data_offset + rva_base;
 
 				section_ptr_add(pe->thunk, sizeof(import_sym->imp_sym.Hint));
@@ -392,8 +400,8 @@ void pe_build_imports(struct PEInfo * pe)
 			{
 				v = 0 ;
 			}
-			*(DWORD *)(pe->thunk->data + thk_ptr) = 
-				*(DWORD *)(pe->thunk->data + ent_ptr) = v;
+			*(DWORD *)(pe->thunk->bufferSectionData + thk_ptr) = 
+				*(DWORD *)(pe->thunk->bufferSectionData + ent_ptr) = v;
 			thk_ptr += sizeof(DWORD);
 			ent_ptr += sizeof(DWORD);
 		}
@@ -429,11 +437,12 @@ void relocate_syms()
 {
 	CoffSym * sym, * sym_end;
 	Section * sec;
-	sym_end = (CoffSym *)(sec_symtab->data + sec_symtab->data_offset);
-	for (sym = (CoffSym *)sec_symtab->data + 1;
+	sym_end = (CoffSym *)(sec_symtab->bufferSectionData + sec_symtab->data_offset);
+	for (sym = (CoffSym *)sec_symtab->bufferSectionData + 1;
 		sym < sym_end; sym++)
 	{
-		sec = (Section *)vecSection[sym->shortSection - 1];
+		// 节表的索引(从1开始)
+		sec = (Section *)vecSection[sym->shortSectionNumber - 1];
 		sym->coff_sym_value += sec->sh.VirtualAddress;
 	}
 }
@@ -449,19 +458,19 @@ void coff_relocs_fixup()
 	char * name;
 
 	sr = sec_rel;
-	rel_end = (CoffReloc *)(sr->data + sr->data_offset);
-	qrel = (CoffReloc *)sr->data;
+	rel_end = (CoffReloc *)(sr->bufferSectionData + sr->data_offset);
+	qrel = (CoffReloc *)sr->bufferSectionData;
 	for (rel = qrel; rel < rel_end; rel++)
 	{
 		sec = (Section *)vecSection[rel->section - 1];
 
 		sym_index = rel->cfsym;
-		sym = &((CoffSym *)sec_symtab->data)[sym_index];
-		name = sec_symtab->link->data + sym->name;
+		sym = &((CoffSym *)sec_symtab->bufferSectionData)[sym_index];
+		name = sec_symtab->linkSection->bufferSectionData + sym->name;
 		val  = sym->coff_sym_value;
 		type = rel->type;
 		addr = sec->sh.VirtualAddress + rel->offset;
-		ptr = sec->data + rel->offset;
+		ptr = sec->bufferSectionData  + rel->offset;
 		switch(type) {
 		case IMAGE_REL_I386_DIR32:
 			*(int *)ptr += val;
@@ -538,7 +547,7 @@ int pe_write(struct PEInfo * pe)
 				sec->sh.SizeOfRawData = 0;
 				continue;
 			}
-			fwrite(sec->data,1 ,sec->data_offset, op);
+			fwrite(sec->bufferSectionData, 1, sec->data_offset, op);
 			file_offset = pe_file_align(file_offset + sec->data_offset);
 			psh->SizeOfRawData = file_offset = 1;
 			fpad(op, file_offset);
@@ -562,6 +571,10 @@ int pe_write(struct PEInfo * pe)
 	return 0;
 }
 void get_entry_addr(struct PEInfo * pe);
+/***********************************************************
+ * 功能:		输出PE文件
+ * filename:	EXE文件名
+ **********************************************************/
 int pe_output_file(char * file_name)
 {
 	int ret;
@@ -591,9 +604,13 @@ void get_entry_addr(struct PEInfo * pe)
 	unsigned long addr = 0;
 	int cs;
 	CoffSym * cfsym_entry;
+	// 查找名为_entry的符号。返回符号COFF符号表中的序号。
 	cs = coffsym_search(sec_symtab, entry_symbol);
-	cfsym_entry = (CoffSym *)sec_symtab->data + cs;
+	// 使用序号在符号COFF符号表中找到对应的CoffSym结构体。
+	cfsym_entry = (CoffSym *)sec_symtab->bufferSectionData + cs;
+	// 对于函数，coff_sym_value表示当前指令在代码节位置。
 	addr = cfsym_entry->coff_sym_value;
+	// 把当前指令在代码节位置放入entry_addr中。
 	pe->entry_addr = addr;
 }
 

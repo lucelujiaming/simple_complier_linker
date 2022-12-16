@@ -314,7 +314,7 @@ void func_body(Symbol * sym)
 	sec_text_opcode_offset = sec_text->data_offset;
 	//    更新sym->related_value为符号COFF符号表中序号。
 	coffsym_add_update(sym, sec_text_opcode_offset, 
-		sec_text->index, CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
+		sec_text->cSectionIndex, CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
 	
 	/* 2. 放一个匿名符号到局部符号表中 */
 	// SC_ANOM不是e_StorageClass的一部分。而是e_TokenCode类型。
@@ -412,7 +412,7 @@ void initializer(Type * typeToken, int value, Section * sec)
 	{
 	    // 只需要把右值直接复制到节内部即可。复制后sec->data的内容变成：
 		//   "aSSSSS"
-		memcpy(sec->data + value, get_current_token(), strlen(get_current_token()));
+		memcpy(sec->bufferSectionData + value, get_current_token(), strlen(get_current_token()));
 		get_token();
 	}
 	else
@@ -468,7 +468,7 @@ void init_variable(Type * type, Section * sec, int value) // , int idx)
 		// 得到数据类型。
 		bt = type->typeCode & T_BTYPE;
 		// 得到保存全局变量和字符串常量的内存位置。
-		ptr = sec->data + value;
+		ptr = sec->bufferSectionData + value;
 		// 更新节中对应的位置。
 		switch(bt) {
 		case T_CHAR:

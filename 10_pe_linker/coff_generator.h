@@ -13,28 +13,40 @@ enum e_Sec_Storage{
 	SEC_RDATA_STORAGE = 2
 };
 
+// 这个结构体的设计是基于这样的一个前提。
+// 就是对于不同的节来说，data中保存的内容也不同。例如：
+//     对于代码节来说，  就是一个字节一个字节的机器码。在编译生成代码的时候，通过gen_byte写入。
+//     对于数据节来说，  就是一个字节一个字节的数据。在initializer和init_variable中写入。
+//     对于符号表节来说，就是一个一个的CoffSym结构体。我们在编译过程中，
+//                       每当遇到一个函数或者是一个全局变量的时候，我们就需要增加或更新COFF符号。
+//     对于链接库符号节来说，也是一个一个的CoffSym结构体。
+//     对于字符串节来说，就是一个一个的字符串。
+//     对于重定位信息节来说，就是一个一个的CoffReloc结构体。
+// 因此上，我们需要记录缓冲区写入位置，缓冲区，缓冲区大小。
 typedef struct Section_t{
-	int data_offset;           //当前数据偏移位置     
-	char * data;               //节数据
-	int data_allocated;        //分配内存空间
-	char index;                //节序号
-	struct Section_t * link;   //关联的其他节，符号节关联字符串节
-	int * hashtab;             //哈希表，只用于存储符号表
-	IMAGE_SECTION_HEADER sh;   //节头
+    int data_offset;                  // 当前数据偏移位置。也就是缓冲区写入位置。
+    char * bufferSectionData;         // 节数据。也就是缓冲区
+    int data_allocated;               // 分配内存空间。也就是缓冲区大小。
+    char cSectionIndex;               // 节序号。这个有几个用处。
+	                                  // 一个是在符号表节中，表示这个符号来自于哪个节。
+	                                  // 还有是在重定位信息节中，标识需要重定位数据的节编号。
+    struct Section_t * linkSection;   // 关联的其他节，符号节关联字符串节
+    int * hashtab;                    // 哈希表，只用于存储符号表
+    IMAGE_SECTION_HEADER sh;          // 节头
 } Section;
 
 /* COFF符号结构定义。含义参见表7.9 符号表记录成员变量说明 */
-typedef struct CoffSym 
+typedef struct CoffSym
 {
-    DWORD name;					// 符号名称：字符串表中的一个偏移地址。
+    DWORD name;                	// 符号名称：字符串表中的一个偏移地址。
 								//           这里对符号表记录格式做一个小修改。按照COFF文件规范，
 								//           当符号名小于长度8时，将符号名直接存在ShortName中，
 								//           当大于8时，Short字段为0，Long字段表示了符号名称在字符串表中的偏移位置。
 								//           现在改为无论符号名称长度是否大于8，符号表名称都放在字符串表中，
-								//           Name字段表示符号名称在字符串表中的偏移位置，
+								//           name字段表示符号名称在字符串表中的偏移位置，
 								//           新增加的Next字段用来保存哈希冲突链表。
 	DWORD next;					// 用于保存冲突链表
-    /* 
+    /*
     struct {
 		DWORD   Short;			// if 0, use LongName
         DWORD   Long;			// offset into string table
@@ -45,12 +57,12 @@ typedef struct CoffSym
                                 //                 对于函数表示当前指令在代码节位置
 								//                 其意义依赖于Section Number和Storage Class这两个域，
 								//                 它通常表示可重定位的地址。
-    short   shortSection;		// 定义此符号的节索引：这个带符号整数是节表的索引(从1开始)，用以标识定义此符号的节
+    short   shortSectionNumber;	// 定义此符号的节索引：这个带符号整数是节表的索引(从1开始)，用以标识定义此符号的节
 								//                     小于1的值有特殊的含义，详细信息请参考表7.10“Section Number域的值”
     WORD    typeFunc;			// COFF符号类型：一个表示类型的数字。
 	                            //               这个字的低字节定义了这个符号是一个指针，函数返回还是数组基地址。
 	                            //               Microsoft工具仅使用此字段来指示符号是否为函数，
-								//               所以，只有两个结果值：0x0和0x20。 
+								//               所以，只有两个结果值：0x0和0x20。
 								//               但是，其他工具可以使用此字段来传达更多信息。
 	                            //               例如，Visual C++ 调试信息用于指示类型。
 								//               正确指定函数属性非常重要。 增量链接需要此信息才能正常工作。
@@ -65,21 +77,50 @@ typedef struct CoffSym
 #define CST_NOTFUNC 0     //Coff符号类型，非函数
 
 /* 重定位结构定义 */
-typedef struct CoffReloc 
+/************************************************************************/
+/* COFF重定位信息：                                                     */
+/* 目标文件中包含COFF重定位信息，它用来指出当节中的数据被放进映像文件   */
+/* 以及将来被加载进内存时应如何修改这些数据。                           */
+/* 映像文件中没有COFF重定位信息，这是因为所有被引用的符号都已经被赋予了 */
+/* 一个在平坦内存空间中的地址。映像文件中包含的重定位信息是位于.reloc节 */
+/* 中的基址重定位信息(除非映像有IMAGE_FILE_RELOCS_STRIPPED属性)。       */
+/* 对于目标文件中的每个节，都有一个由长度固定的记录组成的数组来保存     */
+/* 此节的COFF重定位信息。此数组的位置和长度在节头中指定。               */
+/* 数组的每个元素定义在IMAGE_RELOCATION中。简单可以理解为：             */
+/*		typedef struct _IMAGE_RELOCATION {                              */
+/*			unsigned long ulAddr;    // 定位偏移                        */
+/*			unsigned long ulSymbol;  // 符号                            */
+/*			unsigned shortusType;    // 定位类型                        */
+/*		} IMAGE_RELOCATION;                                             */
+/*                                                                      */
+/* 一共三个成员！                                                       */
+/*     ulAddr是要定位的内容在段内偏移。比如：                           */
+/*        一个正文段，起始位置为0x010，ulAddr的值为0x05，那你的         */
+/*        定位信息就要写在0x15处。而且信息的长度要看你的代码的类型，    */
+/*        32位的代码要写4个字节，16位的就只要字2个字节。                */
+/*     ulSymbol是符号索引，它指向符号表中的一个记录。是符号表中的       */
+/*        一个记录的记录号。这个成员指明了重定位信息所对映的符号。      */
+/*     usType是重定位类型的标识。32位代码中，                           */
+/*        通常只用两种定位方式。一是绝对定位，二是相对定位。            */
+/************************************************************************/
+typedef struct CoffReloc
 {
     DWORD offset;	// 需要进行重定位的代码或数据的地址。
-	                // 这是从节开头算起的偏移，加上节的RV A/Offset域的值，
+	                // 这是从节开头算起的偏移，加上节的RVA/Offset域的值，
     DWORD cfsym;	// 符号表的索引(从0开始)。这个符号给出了用于重定位的地址。
-                    // 如果这个指定符号的存储类别为节，那么它的地址就是第一个与它同名的节的地址。
+                    // 如果这个指定符号的存储类别为节，
+					// 那么它的地址就是第一个与它同名的节的地址。
+	// 下面对重定位记录格式做一个小修改，
+	// 将Type这个成员变量的两个字节拆分为两个变量：
+	// 一个字节保存需要重定位数据的节编号；另一个字节存储重定位类型。
 	BYTE  section;  // 需要重定位数据的节编号。
     BYTE  type;     // 重定位类型。合法的重定位类型依赖于机器类型，
 	                // 请参考表7.13“重定位类型指示符取值”
+					// 基本上只有两种情况。
+					//     IMAGE_REL_I386_DIR32 - 32位绝对定位。
+					//     IMAGE_REL_I386_REL32 - 32位相对定位。
 } CoffReloc;
-
 // 参见7.1.4节。例如， 如果节的第一个字节的地址是0xl0，那么第三个字节的地址就是0x12
-
-
-
 
 
 void * section_ptr_add(Section * sec, int increment);
@@ -93,8 +134,8 @@ void coffsym_add_update(Symbol *sym, int val, int sec_index,
 		// short typeFunc, char StorageClass);
 
 void init_coff();
-int load_objfile(char * file_name);
-void output_objfile(char * name);
+int load_obj_file(char * file_name);
+void output_obj_file(char * name);
 void free_sections();
 
 int  make_jmpaddr_list(int jmp_addr);

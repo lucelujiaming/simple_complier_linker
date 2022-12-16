@@ -34,9 +34,9 @@ Section * section_new(char * name, int iCharacteristics)
 	sec = (Section *)mallocz(sizeof(Section));
 	memcpy(sec->sh.Name, name, strlen(name));
 	sec->sh.Characteristics = iCharacteristics;
-	sec->index = vecSection.size() + 1;  // Start from 1
-	sec->data = (char *)mallocz(sizeof(char) * initSize);
-	sec->data_allocated = initSize;
+	sec->cSectionIndex      = vecSection.size() + 1;  // Start from 1
+	sec->bufferSectionData  = (char *)mallocz(sizeof(char) * initSize);
+	sec->data_allocated     = initSize;
 	// IMAGE_SCN_LNK_REMOVE代表此节不会成为最终形成的映像文件的一部分。
 	// 此标志仅对目标文件合法，
 	// 通过这个标志可判断该节是否需要放人映像文件中，
@@ -55,22 +55,25 @@ Section * section_new(char * name, int iCharacteristics)
 /************************************************************************/
 void section_realloc(Section * sec, int new_size)
 {
-	int size;
-	char * data ;
+	int sizeAllocate;
+	char * dataBuffer ;
 	// 取得当前的空间大小。这个在section_new中初始化为8。
-	size = sec->data_allocated;
+	sizeAllocate = sec->data_allocated;
 	// 当前的空间大小乘以2，直到满足节数据新长度。显然这个值为8的幂。
-	while(size < new_size)
-		size = size * 2;
-	// 使用realloc更改已经配置的内存空间。
-	data = (char *)realloc(sec->data, size);
-	if(data == NULL)
+	while(sizeAllocate < new_size)
+		sizeAllocate = sizeAllocate * 2;
+	// 使用realloc更改已经配置的内存空间。发生以下情况：
+	//   1）如果当前内存段后面有需要的内存空间，则直接扩展这段内存空间，realloc()将返回原指针。
+	//   2）如果当前内存段后面的空闲字节不够，那么就使用堆中的第一个能够满足这一要求的内存块，
+	//      将目前的数据复制到新的位置，并将原来的数据块释放掉，返回新的内存块位置。
+	dataBuffer = (char *)realloc(sec->bufferSectionData, sizeAllocate);
+	if(dataBuffer == NULL)
 		printf("realloc error");
 	// 因为是更改已经配置的内存空间。
 	// 因此上，已经配置过空间被保留，我们只需要初始化新分配的空间。
-	memset(data + sec->data_allocated, 0x00, size - sec->data_allocated);
-	sec->data = data;
-	sec->data_allocated = size;
+	memset(dataBuffer + sec->data_allocated, 0x00, sizeAllocate - sec->data_allocated);
+	sec->bufferSectionData = dataBuffer;
+	sec->data_allocated    = sizeAllocate;
 }
 
 /************************************************************************/
@@ -87,7 +90,7 @@ void * section_ptr_add(Section * sec, int increment)
 	if(offsetOne > sec->data_allocated)
 		section_realloc(sec, offsetOne);
 	sec->data_offset = offsetOne;
-	return sec->data + offset;
+	return sec->bufferSectionData + offset;
 }
 
 /************************************************************************/
@@ -102,8 +105,8 @@ Section * new_coffsym_section(char* symtable_name, int iCharacteristics,
 {
 	Section * sec;
 	sec = section_new(symtable_name, iCharacteristics);
-	sec->link = section_new(strtable_name, iCharacteristics);
-	sec->hashtab = (int *)mallocz(sizeof(int) * MAXKEY);
+	sec->linkSection = section_new(strtable_name, iCharacteristics);
+	sec->hashtab     = (int *)mallocz(sizeof(int) * MAXKEY);
 	return sec;
 }
 
@@ -181,7 +184,7 @@ int coffsym_add(Section * symtab, char * name, int val, int sec_index,
 	CoffSym * cfsym;
 	int cs, keyno;
 	char * csname;
-	Section * strtab = symtab->link;
+	Section * strtab = symtab->linkSection;
 	int * hashtab;
 	hashtab = symtab->hashtab;
 	// 查找是否存在。
@@ -189,24 +192,26 @@ int coffsym_add(Section * symtab, char * name, int val, int sec_index,
 	// 如果不存在，就添加。
 	if(cs == 0)  //
 	{
+		// 扩充CoffSym来容纳数据。
 		cfsym = (CoffSym *)section_ptr_add(symtab, sizeof(CoffSym));
 		// 增加COFF符号名字符串。
 		csname = coffstr_add(strtab, name);
-		cfsym->name           = csname - strtab->data;   // ????
+		// name字段表示符号名称在字符串表中的偏移位置，因为符号表名称都放在字符串表中。
+		cfsym->name           = csname - strtab->bufferSectionData;
 		// 对于函数表示当前指令在代码节位置。
 		cfsym->coff_sym_value = val;
 		// 节表的索引
-		cfsym->shortSection   = sec_index;
+		cfsym->shortSectionNumber   = sec_index;
 		// 表示类型的数字。0x20 - CST_FUNC
-		cfsym->typeFunc           = typeFunc;
+		cfsym->typeFunc             = typeFunc;
 		// 存储类别通常来说都是IMAGE_SYM_CLASS_EXTERNAL，也就是
-		cfsym->storageClass   = StorageClass;
+		cfsym->storageClass         = StorageClass;
 		// 生成哈希值。
 		keyno = elf_hash(name);
 		// 
 		cfsym->next = hashtab[keyno];
 
-		cs = cfsym - (CoffSym *)symtab->data;
+		cs = cfsym - (CoffSym *)symtab->bufferSectionData;
 		hashtab[keyno] = cs;
 	}
 	return cs;
@@ -234,9 +239,9 @@ void coffsym_add_update(Symbol *sym, int val, int sec_index,
 	}
 	else
 	{
-		cfsym = &((CoffSym *)sec_symtab->data)[sym->related_value];
-		cfsym->coff_sym_value = val;
-		cfsym->shortSection = sec_index;
+		cfsym = &((CoffSym *)sec_symtab->bufferSectionData)[sym->related_value];
+		cfsym->coff_sym_value     = val;
+		cfsym->shortSectionNumber = sec_index;
 	}
 }
 
@@ -271,7 +276,7 @@ char * coffstr_add(Section * strtab, char * name)
 /*  功能:            查找COFF符号                                       */
 /*  symtab:          保存COFF符号表的节                                 */
 /*  name:            符号名称                                           */
-/*  返回值:          符号COFF符号表中序号                               */
+/*  返回值:          符号COFF符号表中的序号                             */
 /************************************************************************/
 int coffsym_search(Section * symtab, char * name)
 {
@@ -281,12 +286,12 @@ int coffsym_search(Section * symtab, char * name)
 	Section * strtab;
 	
 	keyno  = elf_hash(name);
-	strtab = symtab->link;
+	strtab = symtab->linkSection;
 	cs     = symtab->hashtab[keyno];
 	while(cs)
 	{
-		cfsym  = (CoffSym *)symtab->data + cs;
-		csname = strtab->data + cfsym->name;
+		cfsym  = (CoffSym *)symtab->bufferSectionData + cs;
+		csname = strtab->bufferSectionData + cfsym->name;
 		if(!strcmp(name, csname))
 			return cs;
 		cs = cfsym->next;
@@ -314,7 +319,7 @@ void coffreloc_add(Section * sec, Symbol * sym, int offset, char type)
 	name = ((TkWord)tktable[sym->token_code]).spelling;
 	// 根据单词字符串查找COFF符号。
 	cfsym = coffsym_search(sec_symtab, name);
-	coffreloc_redirect_add(offset, cfsym, sec->index, type);
+	coffreloc_redirect_add(offset, cfsym, sec->cSectionIndex, type);
 }
 
 /************************************************************************/
@@ -352,7 +357,7 @@ int make_jmpaddr_list(int jmp_addr)
 	}
 	// 把前一跳转指令地址写入代码节位置。
 	// 这个值在if和for的时候为零。而在break, continue, return的时候非零。
-	*(int *)(sec_text->data + sec_text_opcode_offset) = jmp_addr;
+	*(int *)(sec_text->bufferSectionData + sec_text_opcode_offset) = jmp_addr;
 	// 返回值为代码节位置。这句话其实没啥作用。
 	jmp_addr = sec_text_opcode_offset;
 	// 更新代码节位置。指向下一条指令。
@@ -373,7 +378,7 @@ void jmpaddr_backstuff(int fill_offset, int jmp_addr)
 	while (fill_offset)
 	{
 		// ptr指向代码节偏移位置
-		ptrSecText = (int *)(sec_text->data + fill_offset);
+		ptrSecText = (int *)(sec_text->bufferSectionData + fill_offset);
 		// 记住下一个需要回填位置
 		next_addr = *ptrSecText;
 		// 填入相对地址
@@ -424,9 +429,9 @@ void init_coff()
 			IMAGE_SCN_LNK_REMOVE | IMAGE_SCN_MEM_READ, ".dynstr");
 
 	coffsym_add(sec_symtab,    "",       0,                0, CST_NOTFUNC, IMAGE_SYM_CLASS_NULL);
-	coffsym_add(sec_symtab,    ".data",  0,  sec_data->index, CST_NOTFUNC, IMAGE_SYM_CLASS_STATIC);
-	coffsym_add(sec_symtab,    ".bss",   0,   sec_bss->index, CST_NOTFUNC, IMAGE_SYM_CLASS_STATIC);
-	coffsym_add(sec_symtab,    ".rdata", 0, sec_rdata->index, CST_NOTFUNC, IMAGE_SYM_CLASS_STATIC);
+	coffsym_add(sec_symtab,    ".data",  0,  sec_data->cSectionIndex, CST_NOTFUNC, IMAGE_SYM_CLASS_STATIC);
+	coffsym_add(sec_symtab,    ".bss",   0,   sec_bss->cSectionIndex, CST_NOTFUNC, IMAGE_SYM_CLASS_STATIC);
+	coffsym_add(sec_symtab,    ".rdata", 0, sec_rdata->cSectionIndex, CST_NOTFUNC, IMAGE_SYM_CLASS_STATIC);
 	coffsym_add(sec_dynsymtab, "",       0,                0, CST_NOTFUNC, IMAGE_SYM_CLASS_NULL);
 }
 
@@ -442,7 +447,7 @@ void free_sections()
 		sec = (Section *)vecSection[idx];
 		if(sec->hashtab != NULL)
 			free(sec->hashtab);
-		free(sec->data);
+		free(sec->bufferSectionData);
 		free(sec);
 	}
 }
@@ -480,7 +485,7 @@ void fpad(FILE * fp, int new_pos)
 /* file_name:       目标文件名                                          */
 /* 启动参数为-lmsvcrt -o HelloWorld.exe HelloWorld.obj，会进入这个函数。*/
 /************************************************************************/
-int load_objfile(char * file_name)
+int load_obj_file(char * file_name)
 {
 	IMAGE_FILE_HEADER file_header;
 	// Section ** secs;
@@ -522,22 +527,27 @@ int load_objfile(char * file_name)
 	cur_rel_offset  = sec_rel->data_offset;
 	for (i = 0; i < nsec_obj; i++)
 	{
-		// COFF符号表
+		// COFF符号表存储在.symtab节中。
+		//     例如在.symtab节头中，PointerToRawData=0x1D0，SizeOfRawData=0x90，
+		//     即符号表内容是位于文件偏移位置0x1D0，连续的0x 0=144字节，
+		//     符号个数 = 144 / sizeof(CoffSym) = 144/18 = 8，
+		//     这8个符号是什么需要通过字符串表才能知道。
 		if(!strcmp((char *)vecSection[i]->sh.Name, ".symtab"))
 		{
-			// 创建一个COFF符号
+			// 为COFF符号表分配空间。大小由SizeOfRawData指定。
 			cfsyms = (CoffSym *)mallocz(vecSection[i]->sh.SizeOfRawData);
-			// 读出这个COFF符号
+			// 根据PointerToRawData给出的文件偏移位置移动文件指针。
 			fseek(file_obj, 1, vecSection[i]->sh.PointerToRawData);
+			// 读出COFF符号表
 			fread(cfsyms, 1, vecSection[i]->sh.SizeOfRawData, file_obj);
-			// 得到COFF符号个数。
+			// 得到COFF符号个数。这8个符号是什么需要通过字符串表才能知道。
 			nSym = vecSection[i]->sh.SizeOfRawData / sizeof(CoffSym);
 			continue;
 		}
 		// COFF字符串表
 		else if(!strcmp((char *)vecSection[i]->sh.Name, ".strtab"))
 		{
-			// 创建一个字符串
+			// 为字符串表分配空间。
 			strs = (char *)mallocz(vecSection[i]->sh.SizeOfRawData);
 			// 读出所有的字符串、这里是：
 			//     ..data..bss..rdata.main._entry.
@@ -545,30 +555,40 @@ int load_objfile(char * file_name)
 			fread(strs, 1, vecSection[i]->sh.SizeOfRawData, file_obj);
 			continue;
 		}
+		// 不处理动态符号表和动态字符串表。
 		else if(!strcmp((char *)vecSection[i]->sh.Name, ".dynsym") ||
 			    !strcmp((char *)vecSection[i]->sh.Name, ".dynstr"))
 		{
 			continue;
 		}
+		// 代码执行到这里，说明不是符号表和字符串表。
+		// 而是<.text> <.data> <.idata> <.rdata> <.bss> <.rel> 
+		// 根据PointerToRawData给出的文件偏移位置移动文件指针。
 		fseek(file_obj, SEEK_SET, vecSection[i]->sh.PointerToRawData);
+		// 给节数据预留至少increment大小的内存空间
 		ptr = section_ptr_add(vecSection[i], vecSection[i]->sh.SizeOfRawData);
+		// 读出一个节。
 		fread(ptr, 1, vecSection[i]->sh.SizeOfRawData, file_obj);
 	}
-	// 使用COFF符号个数分配空间。
+	// 使用COFF符号个数分配指针空间。
 	old_to_new_syms = (int *)mallocz(sizeof(int) * nSym);
-	// 符号从一开始。
+	// 符号从一开始。因为第一个是符号对应的是空字符串。
 	for (i = 1; i < nSym; i++)
 	{
+		// 取得一个符号。
 		cfsym = &cfsyms[i];
+		// Name字段表示符号名称在字符串表中的偏移位置。
+		// cs_name指向字符串表中当前的字符串。
 		cs_name = strs + cfsym->name;
+		// 
 		cfsym_index = coffsym_add(sec_symtab, cs_name,
-			cfsym->coff_sym_value, cfsym->shortSection, 
+			cfsym->coff_sym_value, cfsym->shortSectionNumber, 
 			cfsym->typeFunc,       cfsym->storageClass);
 		old_to_new_syms[i] = cfsym_index;
 	}
-	// 重定位信息节
-	rel     = (CoffReloc *)(sec_rel->data +cur_rel_offset);
-	rel_end = (CoffReloc *)(sec_rel->data + sec_rel->data_offset);
+	// 重定位信息节。
+	rel     = (CoffReloc *)(sec_rel->bufferSectionData + cur_rel_offset);
+	rel_end = (CoffReloc *)(sec_rel->bufferSectionData + sec_rel->data_offset);
 	for (; rel < rel_end; rel++)
 	{
 		cfsym_index  = rel->cfsym;
@@ -587,7 +607,7 @@ int load_objfile(char * file_name)
 /* file_name:       目标文件名                                          */
 /* 启动参数为-o HelloWorld.obj -c HelloWorld.c，会进入这个函数。        */
 /************************************************************************/
-void output_objfile(char * file_name)
+void output_obj_file(char * file_name)
 {
 	int idx, sh_size, nsec_obj = 0;
 	IMAGE_FILE_HEADER * coff_file_header;
@@ -611,10 +631,10 @@ void output_objfile(char * file_name)
 	{
 		Section * sec = vecSection[idx];
 		// 如果没有数据，就不处理。
-		if(sec->data == NULL)
+		if(sec->bufferSectionData == NULL)
 			continue;
 		// 写入一个节的数据
-		fwrite(sec->data, 1, sec->data_offset, coff_obj_file);
+		fwrite(sec->bufferSectionData, 1, sec->data_offset, coff_obj_file);
 		// 计算指向COFF文件中节的第一个页面的文件指针。
 		sec->sh.PointerToRawData = file_offset;
 		// 计算磁盘文件中已初始化数据的大小。
