@@ -4,10 +4,7 @@ char *entry_symbol = "_entry";
 extern std::vector<Section *> vecSection;
 
 extern Section *sec_text,			// 代码节
-				*sec_data,			// 数据节
-				*sec_bss,			// 未初始化数据节
-				*sec_idata,			// 导入表节
-				*sec_rdata,			// 只读数据节
+				*sec_idata,			// 导入节
 				*sec_rel,			// 重定位信息节
 				*sec_symtab,		// 符号表节	
 				*sec_dynsymtab;		// 链接库符号节
@@ -19,7 +16,7 @@ std::vector<std::string> vecLib;
 short g_subsystem;
 int   g_output_type;				// 输出文件类型
 
-extern int nsec_image;				// 映像文件节个数
+extern int nsec_image;				// 映像文件（即可执行文件）节个数
 
 // MS-DOS头
 IMAGE_DOS_HEADER g_dos_header = {
@@ -76,7 +73,7 @@ IMAGE_NT_HEADERS32 nt_header = {
 	{
 		/* IMAGE_OPTIONAL_HEADER32 - COFF可选文件头 - 包括三部分： */
 		/* 1. 可选文件头中的标准域 */
-		0x010B,       /* WORD OptionalHeader.Magic                     映像文件的状态。
+		0x010B,       /* WORD OptionalHeader.Magic                     映像文件（即可执行文件）的状态。
 		                                                               0x10B，表明这是一个正常的可执行文件。*/
 		0x06,         /* BYTE OptionalHeader.MajorLinkerVersion        链接器主版本号 */
 		0x00,         /* BYTE OptionalHeader.MinorLinkerVersion        链接器次版本号 */
@@ -117,7 +114,9 @@ IMAGE_NT_HEADERS32 nt_header = {
 
 char *get_line(char *line, int size, FILE *fp);
 /***********************************************************
- * 功能:	加载静态库
+ * 功能:	加载静态库。
+            打开slib库文件，读出每一行，调用coffsym_add函数，
+			把库文件里面的符号加到sec_dynsymtab里面。
  * name:    静态库文件名,不包括路径和后缀
  **********************************************************/
 int pe_load_lib_file(char * file_name)
@@ -125,10 +124,10 @@ int pe_load_lib_file(char * file_name)
 	char lib_file[MAX_PATH];
 	int ret = -1;
 	char lib_line[512], *dll_name, *pTrimedLibLinePtr;
-	FILE * fp;
+	FILE * slib_fp;
 	sprintf(lib_file, "%s%s.slib", lib_path, file_name);
-	fp = fopen(lib_file, "rb");
-	if (fp)
+	slib_fp = fopen(lib_file, "rb");
+	if (slib_fp)
 	{
 		// dll_name = get_dllname(lib_file);
 		dll_name = strrchr(lib_file, '\\');
@@ -136,7 +135,7 @@ int pe_load_lib_file(char * file_name)
 		for (;;)
 		{
 			// 取出静态库中的一行。并取出无用字符。
-			pTrimedLibLinePtr = get_line(lib_line, sizeof(lib_line), fp);
+			pTrimedLibLinePtr = get_line(lib_line, sizeof(lib_line), slib_fp);
 			if (NULL == pTrimedLibLinePtr)
 			{
 				break;
@@ -151,9 +150,9 @@ int pe_load_lib_file(char * file_name)
 				sec_text->cSectionIndex, CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
 		}
 		ret = 0;
-		if (fp)
+		if (slib_fp)
 		{
-			fclose(fp);
+			fclose(slib_fp);
 		}
 	}
 	else
@@ -204,12 +203,16 @@ int pe_find_import(char * strSymbol);
 struct ImportSym * pe_add_import(struct PEInfo * pe,
 								 int sym_index, char * importsym_name);
 /***********************************************************
- * 功能:	解析程序中用到的外部符号
+ * 功能:	解析程序中用到的外部符号。
+            这个的逻辑是这样的。首先取出符号表节中的每一符号。
+			除了我们代码中含有的，外部函数例如printf就会是未定义符号。
+			我们找到这样的符号。在sec_dynsymtab中查找。
  * pe:		PE信息存储结构指针
+   返回值:  0 - 成功，1 - 发现有的符号找不到。
  **********************************************************/
 int resolve_coffsyms(struct PEInfo * pe)
 {
-	CoffSym * sym;
+	CoffSym * coffSymElement;
 	int sym_index, sym_end ;
 	int ret = 0;
 	int found = 1;
@@ -218,19 +221,21 @@ int resolve_coffsyms(struct PEInfo * pe)
 	// 符号从1开始，因为第0个符号为空。
 	for (sym_index = 1; sym_index < sym_end; sym_index++)
 	{
-		sym = (CoffSym *)sec_symtab->bufferSectionData + sym_index;
+		// 取得一个符号
+		coffSymElement = (CoffSym *)sec_symtab->bufferSectionData + sym_index;
+		// 取得这个符号的名字调试观察用。
 		char * dbg_name = 
-				sec_symtab->linkSection->bufferSectionData + sym->coffSymName;
-		
+				sec_symtab->linkSection->bufferSectionData + coffSymElement->coffSymName;		
 		// 如果是一个未定义符号。
-		if(sym->shortSectionNumber == IMAGE_SYM_UNDEFINED)
+		if(coffSymElement->shortSectionNumber == IMAGE_SYM_UNDEFINED)
 		{
-			// 得到这个符号对应的字符串。
+			// 得到这个符号对应的名字字符串。
 			char * sym_name = 
-				sec_symtab->linkSection->bufferSectionData + sym->coffSymName;
+				sec_symtab->linkSection->bufferSectionData + coffSymElement->coffSymName;
 			// COFF符号类型
-			unsigned short typeFunc = sym->typeFunc;
-			// 调用coffsym_search函数在sec_dynsymtab中查找符号。返回COFF符号表中的序号。
+			unsigned short typeFunc = coffSymElement->typeFunc;
+			// 调用coffsym_search函数在sec_dynsymtab中查找符号。
+			// 返回sec_dynsymtab符号表中的序号。
 			int imp_sym_index = pe_find_import(sym_name);
 			struct ImportSym * import_sym;
 			if (0 == imp_sym_index)
@@ -244,22 +249,37 @@ int resolve_coffsyms(struct PEInfo * pe)
 			{
 				int offset = import_sym->thk_offset;
 				char buffer[128];
-				// 得到代码段的缓冲区写入位置。
+				// 得到代码节的缓冲区写入位置。
 				offset = sec_text->data_offset;
-				// 代码段缓冲区预留空间。
+				// 代码节缓冲区预留6个字节的空间。
+				// 包括两个字节的JMP命令和4个字节的地址。
 				WORD * retTmp = (WORD *)section_ptr_add(sec_text, 6);
+				// 在预留空间写入0x25FF。这句Opcode表明是FF25型的IAT调用。
+				// 也就是JMP DWORD PTR，后面跟着要跳转到的VA地址。
+				// 参考JMP的命令格式在Intel白皮书1064页可以发现：
+				//     FF /4表示是"Jump near, absolute indirect, address given in 
+				//                 r/m32. Not supported in 64-bit mode."。
 				*retTmp = 0x25FF;
+				// IAT称为导入地址数组（Import Address Table，IAT）。
+				// IAT和GOT非常类似，IAT中表项对应本模块中用到的外部符号的真实地址，
+				// 初始为空（也不算为空），在装载后由动态链接器更新为真实地址。
 				sprintf(buffer, "IAT.%s", sym_name);
-				// 增加名字为"IAT.%s"的COFF符号。
+				// 增加名字为"IAT.%s"的COFF符号。定义此符号的节是导入节。参见10.2.7。
 				import_sym->iat_index = coffsym_add(sec_symtab, 
-					buffer, 0, sec_idata->cSectionIndex,
+					buffer, 0, 
+					sec_idata->cSectionIndex, 
 					CST_FUNC, IMAGE_SYM_CLASS_EXTERNAL);
 				// 为新增的COFF符号增加COFF重定位信息。
-				coffreloc_redirect_add(offset + 2,
-					import_sym->iat_index, sec_text->cSectionIndex,
-					IMAGE_REL_I386_DIR32);
-				// 代码段的缓冲区写入位置。
+				coffreloc_redirect_add(offset + 2,		// 节的偏移位置为JMP命令后面的位置。
+					import_sym->iat_index,				// 使用刚刚添加的名字为"IAT.%s"的符号作为符号表的索引。
+					sec_text->cSectionIndex,			// 重定位数据的节编号为代码节的节编号。
+					IMAGE_REL_I386_DIR32);				// 32位绝对定位。
+				// 代码节的缓冲区写入位置。
 				import_sym->thk_offset = offset;
+				// 经过上面的操作。
+				// 我们在代码节中预留了6个字节。
+				// 包括两个字节的JMP指令和4个字节的跳转地址。这个地址会在coff_relocs_fixup中填充。
+				// 具体的流程参见CoffReloc的定义。
 			}
 			else
 			{
@@ -285,7 +305,7 @@ int pe_find_import(char * strSymbol)
 /***********************************************************
  * 功能:		增加导入函数
  * pe:			PE信息存储结构指针
- * sym_index:	符号表的索引
+ * sym_index:	符号表的索引 (sec_dynsymtab符号表)
  * name:		符号名
  **********************************************************/
 struct ImportSym * pe_add_import(struct PEInfo * pe,
@@ -293,71 +313,101 @@ struct ImportSym * pe_add_import(struct PEInfo * pe,
 {
 	// int i ;
 	int dll_index;
-	struct ImportInfo *p;
-	struct ImportSym  *s;
+	struct ImportInfo *pImportInfoElement;
+	struct ImportSym  *pImportSymElement;
+	// 链接库符号信息放在链接库符号节中，根据COFF符号表中的序号得到这个符号的CoffSym信息。
+	CoffSym * externalDbgSym = ((CoffSym *)sec_dynsymtab->bufferSectionData + sym_index);
+	// 之后取得这个符号的名字调试观察用。
+	char * dbg_name = 
+				sec_dynsymtab->linkSection->bufferSectionData + externalDbgSym->coffSymName;
+	// 取得导入模块索引。
 	dll_index = ((CoffSym *)sec_dynsymtab->bufferSectionData + sym_index)->coff_sym_value;
 	if (0 == dll_index)
 		return NULL;
-	// 如果pe->imps已经初始化。
+	// 如果pe->imps已经初始化。说明这个导入函数已经增加。
 	if (pe->imps.size() > dll_index)
 	{
-		p = pe->imps[dll_index];
+		// 取出导入模块索引对应的导入模块。
+		pImportInfoElement = pe->imps[dll_index];
 	}
 	// 如果pe->imps没有初始化过。
 	else
 	{
-		p = (struct ImportInfo *)mallocz(sizeof(struct ImportInfo));
-		p->imp_syms.reserve(8);
-		p->dll_index = dll_index;
-		pe->imps.push_back(p);
+		// 创建一个新的ImportInfo对象。
+		pImportInfoElement = (struct ImportInfo *)mallocz(sizeof(struct ImportInfo));
+		pImportInfoElement->imp_syms.reserve(8);
+		// 记下导入模块索引。
+		pImportInfoElement->dll_index = dll_index;
+		// 添加到导入模块表中。
+		pe->imps.push_back(pImportInfoElement);
 	}
-	if (p->imp_syms.size() > dll_index)
+	// 如果导入函数已经增加。
+	if (pImportInfoElement->imp_syms.size() > sym_index) // 找到直接返回，找不到则填加。
 	{
-		return (struct ImportSym *)&(p->imp_syms[dll_index]);
+		return (struct ImportSym *)&(pImportInfoElement->imp_syms[sym_index]);
 	}
 	else
 	{
 		// 分配空间，包括ImportSym结构体和紧跟着后面的符号名空间。
-		s = (struct ImportSym *)mallocz(
+		pImportSymElement = (struct ImportSym *)mallocz(
 			sizeof(struct ImportSym) + strlen(importsym_name));
 		// 复制符号名到IMAGE_IMPORT_BY_NAME的Name里面。
-		strcpy((char *)(&s->imp_sym.Name), importsym_name);
-		p->dll_index = dll_index;
-		p->imp_syms.push_back(s);
-		return s;
+		strcpy((char *)(&pImportSymElement->imp_sym.Name), importsym_name);
+		// 把
+		pImportInfoElement->imp_syms.push_back(pImportSymElement);
+		return pImportSymElement;
 	}
 }
 	
 DWORD pe_virtual_align(DWORD n);
 void pe_build_imports(struct PEInfo * pe);
-/***********************************************************
- * 功能:	计算节区的RVA地址
- * pe:		PE信息存储结构指针
- **********************************************************/
+/**************************************************************************/
+/* 功能:	计算节区的RVA地址                                             */
+/*          RVA地址，即相对虚拟地址。                                     */
+/*          对于映像文件来说，它是某项内容被加载进内存后的地址减去        */
+/*          映像文件的基地址。也就是基于IMAGE BASE的内存地址。            */
+/*          某项内容的RVA几乎总是与它在磁盘上的文件位置(文件指针)不同。   */
+/*          对于目标文件来说， RVA并没有什么意义， 因为内存位置尚未分配。 */
+/*          在这种情况下，RVA是一个节(后面将要描述)中的地址，             */
+/*          这个地址在以后链接时要被重定位。                              */
+/*          为了简单起见，编译器应该将每个节的首个RVA设置为0              */
+/* pe:		PE信息存储结构指针                                            */
+/**************************************************************************/
 int pe_assign_addresses(struct PEInfo * pe)
 {
 	int i ;
 	DWORD addr ;
 	Section *sec, **ps;
-	// 
+	// 指向导入节。参见10.2.7。
 	pe->thunk = sec_idata;
-	// 
+	// 根据映像文件（即可执行文件）节个数分配空间。
 	pe->secs = (Section **)mallocz(nsec_image * sizeof(Section *));
-	addr = nt_header.OptionalHeader.ImageBase+1;
+	// RVA地址，即相对虚拟地址。也就是基于IMAGE BASE的内存地址。
+	// 这里为 0x00400001
+	addr = nt_header.OptionalHeader.ImageBase + 1;
 	for (i = 0; i < nsec_image; ++i)
 	{
+		// 取出一个节。
 		sec = vecSection[i];
+		// 让pe->secs[pe->sec_size]指向vecSection[i]。
 		ps  = &pe->secs[pe->sec_size];
 		*ps = sec;
+		// 对于可执行映像来说，这个域的值是这个节被加载进内存之后
+		// 它的第一个字节相对于映像基址的偏移地址。
+		// 使用pe_virtual_align函数实现内存中1000H字节对齐。
 		sec->sh.VirtualAddress = addr = pe_virtual_align(addr);
-
+		// 如果取出来的是导入节。
 		if (sec == pe->thunk)
 		{
+			// 创建导入信息
 			pe_build_imports(pe);
 		}
+		// 如果节数据不为空。
 		if (sec->data_offset)
 		{
+			// 把节数据累加到addr上面。
 			addr += sec->data_offset;
+			// 指向PE的下一个Section。
 			++pe->sec_size;
 		}
 	}
@@ -376,22 +426,37 @@ DWORD pe_virtual_align(DWORD n)
 } 
 
 int put_import_str(Section * sec, char *sym);
+/***********************************************************
+ * 功能:	创建导入信息（导入目录表及导入符号表）
+ * pe:		pe:		PE信息存储结构指针
+ **********************************************************/
 void pe_build_imports(struct PEInfo * pe)
 {
 	int thk_ptr, ent_ptr, dll_ptr, sym_cnt, i;
+	// 计算节被加载进内存之后它的第一个字节相对于映像基址的偏移地址。
+	// 对于目标文件来说，这个域的值是没有重定位之前其第一个字节的地址；
+	// 为了简单起见，编译器应该把此值设置为0；并且在重定位时应该从偏移地址中减去这个值。
+	// 这里pe->thunk指向sec_idata。
 	DWORD rva_base = pe->thunk->sh.VirtualAddress - 
 		nt_header.OptionalHeader.ImageBase;
+	// 得到导入函数的个数。
 	int ndlls = pe->imps.size();
-
-	for (sym_cnt = i = 0; i < ndlls; ++i)
+	sym_cnt = 0;
+	for (i = 0; i < ndlls; ++i)
 	{
+#ifdef _DEBUG
+		
+#endif
 		sym_cnt += ((struct ImportInfo *)pe->imps[i])->imp_syms.size();
 	}
 	if (sym_cnt == 0)
 	{
 		return ;
 	}
+	// 设置成sec_idata的当前数据偏移位置。sec_idata是导入节。参见10.2.7。
 	pe->imp_offs = dll_ptr = pe->thunk->data_offset;
+	// 一个导入函数占用一个IMAGE_IMPORT_DESCRIPTOR结构体。加一个空表项。
+	// 
 	pe->imp_size = (ndlls + 1) * sizeof(IMAGE_IMPORT_DESCRIPTOR);
 	pe->iat_offs = dll_ptr + pe->imp_size;
 	pe->iat_size = (sym_cnt + ndlls) * sizeof(DWORD);
@@ -406,9 +471,13 @@ void pe_build_imports(struct PEInfo * pe)
 		char * dll_name = (char *)vecDllName[p->dll_index - 1].c_str();
 		//
 		v = put_import_str(pe->thunk, dll_name);
+		// 设定导入地址表的RVA，这个表的内容与导入查找表的内容完全一样，直到映像被绑定。
 		p->imphdr.FirstThunk         = thk_ptr + rva_base;
+		// 设定导入查找表的RVA，这个表包含了每一个导入符号的名称或序号。
 		p->imphdr.OriginalFirstThunk = ent_ptr + rva_base;
+		// 包含DLL名称的ASCII码字符串相对于映像基址的偏移地址。
 		p->imphdr.Name               = v       + rva_base;
+		// 向导入节写入数据。
 		memcpy(pe->thunk->bufferSectionData + dll_ptr, 
 			&p->imphdr, sizeof(IMAGE_IMPORT_DESCRIPTOR));
 
@@ -470,6 +539,7 @@ void relocate_syms()
 	CoffSym * sym, * sym_end;
 	Section * sec;
 	sym_end = (CoffSym *)(sec_symtab->bufferSectionData + sec_symtab->data_offset);
+	// 节表的索引(从1开始)
 	for (sym = (CoffSym *)sec_symtab->bufferSectionData + 1;
 		sym < sym_end; sym++)
 	{
@@ -479,6 +549,12 @@ void relocate_syms()
 	}
 }
 
+/*直接重定位--全局变量 间接重定位--函数调用*/
+/*wndclass.lpfnWndProc   = WndProc ;属于直接重定位*/
+/************************************************************************/
+/* 功能:	修正需要进行重定位的代码或数据的地址                        */
+
+/************************************************************************/
 void coff_relocs_fixup()
 {
 	Section * sec, * sr;
@@ -494,20 +570,31 @@ void coff_relocs_fixup()
 	qrel = (CoffReloc *)sr->bufferSectionData;
 	for (rel = qrel; rel < rel_end; rel++)
 	{
+		// 根据COFF重定位信息中需要重定位数据的节编号，找到对应的节。
 		sec = (Section *)vecSection[rel->sectionIndex - 1];
-
+		// 得到COFF重定位信息的符号表索引。
 		sym_index = rel->cfsymIndex;
+		// 根据符号表索引找到符号表节对应的符号。
 		sym      = &((CoffSym *)sec_symtab->bufferSectionData)[sym_index];
+		// 得到这个符号对应的名字字符串。
 		sym_name = sec_symtab->linkSection->bufferSectionData + sym->coffSymName;
+		// 得到这个符号在节的位置。
 		val      = sym->coff_sym_value;
+		// 得到这个符号的类型。只有两个结果值：0x0 - 非函数和0x20 - 函数。
 		type     = rel->typeReloc;
+		// 得到这个节被加载进内存之后它的第一个字节相对于映像基址的偏移地址。
+		// 加上重定位的代码或数据的地址。得到的是
 		addr     = sec->sh.VirtualAddress + rel->offsetAddr;
+		// 得到这个节的缓冲区写入位置。
 		ptr      = sec->bufferSectionData  + rel->offsetAddr;
+		// 写入数据。
 		switch(type) {
 		case IMAGE_REL_I386_DIR32:
+			// 对于32位绝对定位。这个地址就是符号在节中的位置。
 			*(int *)ptr += val;
 			break;
 		case IMAGE_REL_I386_REL32:
+			// 对于32位相对定位。这个地址就是符号在节中的位置减去映像基址偏移和重定位偏移地址。
 			*(int *)ptr += val - addr;
 			break;
 		default:
@@ -521,41 +608,54 @@ void pe_set_datadir(int dir, DWORD addr, DWORD size);
 int pe_write(struct PEInfo * pe)
 {
 	int i ;
-	FILE * op;
+	FILE * pe_fp;
 	DWORD file_offset, r;
 	int sizeofHeaders;
 
-	op = fopen(pe->filename, "wb");
-	if (NULL == op)
+	pe_fp = fopen(pe->filename, "wb");
+	if (NULL == pe_fp)
 	{
 		print_error(" generate failed", (char *)pe->filename);
 		return 1;
 	}
-
+	// 计算PE文件的MS-DOS占位程序、PE文件头和节头的总大小，
+	// 向上舍入为File Alignment的倍数
 	sizeofHeaders = pe_file_align(
 		sizeof(g_dos_header) + 
 		sizeof(dos_stub) + 
 		sizeof(nt_header) +
 		pe->sec_size * sizeof(IMAGE_SECTION_HEADER));
+	// 循环处理每一个节。用节信息填充NT头和IMAGE_SECTION_HEADER结构体。
 	for (i = 0; i < pe->sec_size; ++i)
 	{
 		Section * sec = pe->secs[i];
+		// 取出节的名字。
 		char * sh_name = (char *)sec->sh.Name;
-		unsigned long addr = sec->sh.VirtualAddress - 
-					nt_header.OptionalHeader.ImageBase;
+		// 计算节被加载进内存之后它的第一个字节相对于映像基址的偏移地址。
+		// 对于目标文件来说，这个域的值是没有重定位之前其第一个字节的地址；
+		// 为了简单起见，编译器应该把此值设置为0；并且在重定位时应该从偏移地址中减去这个值。
+		unsigned long addr = sec->sh.VirtualAddress -     // 
+					nt_header.OptionalHeader.ImageBase;   // 内存映像首地址。
+		// 取出当前数据偏移位置。
 		unsigned long size = sec->data_offset;
+		// 取出节头
 		IMAGE_SECTION_HEADER * psh = &sec->sh;
-
+		// 对于代码节
 		if (!strcmp((char *)sec->sh.Name, ".text"))
 		{
+			// 前面计算出来的addr就是当映像被加载进内存时代码节的开头相对于映像基址的偏移地址。
 			nt_header.OptionalHeader.BaseOfCode = addr;
+			// 这个地址加上前面计算出来的程序入口点就是启动地址。
 			nt_header.OptionalHeader.AddressOfEntryPoint
 				= addr + pe->entry_addr;
 		}
+		// 对于数据节
 		else if (!strcmp((char *)sec->sh.Name, ".data"))
 		{
+			// 前面计算出来的addr就是当映像被加载进内存时数据节的开头相对于映像基址的偏移地址。
 			nt_header.OptionalHeader.BaseOfData = addr;
 		}
+		// 对于数据节
 		else if (!strcmp((char *)sec->sh.Name, ".ldata"))
 		{
 			if (pe->imp_size)
@@ -579,27 +679,32 @@ int pe_write(struct PEInfo * pe)
 				sec->sh.SizeOfRawData = 0;
 				continue;
 			}
-			fwrite(sec->bufferSectionData, 1, sec->data_offset, op);
+			fwrite(sec->bufferSectionData, 1, sec->data_offset, pe_fp);
 			file_offset = pe_file_align(file_offset + sec->data_offset);
 			psh->SizeOfRawData = file_offset = 1;
-			fpad(op, file_offset);
+			fpad(pe_fp, file_offset);
 		}
 	}
-
+	// 节的数目
 	nt_header.FileHeader.NumberOfSections = pe->sec_size;
+	// 设置MS-DOS占位程序、PE文件头和节头的总大小
 	nt_header.OptionalHeader.SizeOfHeaders = sizeofHeaders;
-
+	// 设置运行此映像所需的子系统。
 	nt_header.OptionalHeader.Subsystem = g_subsystem;
-
-	fseek(op, SEEK_SET, 0);
-	fwrite(&g_dos_header, 1, sizeof(g_dos_header), op);
-	fwrite(&dos_stub, 1, sizeof(dos_stub), op);
-	fwrite(&nt_header, 1, sizeof(nt_header), op);
+	// 文件指针回到开头。
+	fseek(pe_fp, SEEK_SET, 0);
+	// 写入PE文件的DOS部分
+	fwrite(&g_dos_header, 1, sizeof(g_dos_header), pe_fp);
+	// 写入PE文件的MS-DOS占位程序。
+	fwrite(&dos_stub, 1, sizeof(dos_stub), pe_fp);
+	// 写入PE文件的NT头的大小。
+	fwrite(&nt_header, 1, sizeof(nt_header), pe_fp);
+	// 写入所有的节
 	for (i = 0; i < pe->sec_size; ++i)
 	{
-		fwrite(&pe->secs[i]->sh, 1, sizeof(IMAGE_SECTION_HEADER), op);
+		fwrite(&pe->secs[i]->sh, 1, sizeof(IMAGE_SECTION_HEADER), pe_fp);
 	}
-	fclose(op);
+	fclose(pe_fp);
 	return 0;
 }
 void get_entry_addr(struct PEInfo * pe);

@@ -16,11 +16,7 @@ int return_symbol_pos;			// 记录return指令位置
 extern Section *sec_text,	// 代码节
 		*sec_data,			// 数据节
 		*sec_bss,			// 未初始化数据节
-		*sec_idata,			// 导入表节
-		*sec_rdata,			// 只读数据节
-		*sec_rel,			// 重定位信息节
-		*sec_symtab,		// 符号表节	
-		*sec_dynsymtab;		// 链接库符号节
+		*sec_rdata;			// 只读数据节
 
 extern int sec_text_opcode_offset ;	 	// 指令在代码节位置
 extern int function_stack_loc ;			// 局部变量在栈中位置
@@ -62,7 +58,7 @@ void external_declaration(e_StorageClass iSaveType);
 
 Section * allocate_storage(Type * typeCurrent, int storage_class, 
 						   e_Sec_Storage sec_area, int token_code, int *addr);
-void init_variable(Type * type, Section * sec, int c); // , int v);
+void init_variable(Type * type, Section * sec, int valueAddr); // , int v);
 
 void print_error(char * strErrInfo, char * subject_str)
 {
@@ -402,7 +398,7 @@ void print_all_stack(char* strPrompt)
 /*		这导致我们进入initializer函数的if部分。                         */
 /*		把字符串memcpy到节的指定位置。                                  */
 /************************************************************************/
-void initializer(Type * typeToken, int value, Section * sec)
+void initializer(Type * typeToken, int valueAddr, Section * sec)
 {
 	// 如果是数据变量的数组初始化。例如我们定义了两个变量，
 	// 当我们解析第二个变量的时候，我们就会进入这个分支：
@@ -412,14 +408,14 @@ void initializer(Type * typeToken, int value, Section * sec)
 	{
 	    // 只需要把右值直接复制到节内部即可。复制后sec->data的内容变成：
 		//   "aSSSSS"
-		memcpy(sec->bufferSectionData + value, get_current_token(), strlen(get_current_token()));
+		memcpy(sec->bufferSectionData + valueAddr, get_current_token(), strlen(get_current_token()));
 		get_token();
 	}
 	else
 	{
 		// 解析全局变量，字符串常量和局部变量的右值。
 		assignment_expression();
-		init_variable(typeToken, sec, value); // , 0);
+		init_variable(typeToken, sec, valueAddr); // , 0);
 		// get_token can not move here. It only work when token == TK_CSTR
 		// get_token();
 	}
@@ -449,7 +445,7 @@ void initializer(Type * typeToken, int value, Section * sec)
 /*      之后执行operand_swap。让栈顶元素变为右值。次栈顶元素变为左值。  */
 /*      最后调用store_zero_to_one将栈顶右值存入次栈顶左值即可。         */
 /************************************************************************/
-void init_variable(Type * type, Section * sec, int value) // , int idx)
+void init_variable(Type * type, Section * sec, int valueAddr) // , int idx)
 {
 	// 2022/11/14
 	int bt;
@@ -468,7 +464,7 @@ void init_variable(Type * type, Section * sec, int value) // , int idx)
 		// 得到数据类型。
 		bt = type->typeCode & T_BTYPE;
 		// 得到保存全局变量和字符串常量的内存位置。
-		ptr = sec->bufferSectionData + value;
+		ptr = sec->bufferSectionData + valueAddr;
 		// 更新节中对应的位置。
 		switch(bt) {
 		case T_CHAR:
@@ -483,7 +479,7 @@ void init_variable(Type * type, Section * sec, int value) // , int idx)
 				if(operand_stack_top->storage_class & SC_SYM)
 				{
 					coffreloc_add(sec, 
-						operand_stack_top->sym, value, IMAGE_REL_I386_DIR32);
+						operand_stack_top->sym, valueAddr, IMAGE_REL_I386_DIR32);
 				}
 			}
 			*(int *)ptr = operand_stack_top->operand_value;
@@ -498,7 +494,7 @@ void init_variable(Type * type, Section * sec, int value) // , int idx)
 		//     char  str1[]  = "str 1";
 		if (type->typeCode & T_ARRAY)
 		{
-			operand_push(type, SC_LOCAL | SC_LVAL, value);
+			operand_push(type, SC_LOCAL | SC_LVAL, valueAddr);
 			operand_swap();
 			array_initialize();
 		}
@@ -506,7 +502,7 @@ void init_variable(Type * type, Section * sec, int value) // , int idx)
 		{
 			// 对于局部变量，左值就是一个operand_stack元素。只有类型才有用。直接把类型压栈即可。
 			// 在压栈之前，栈顶元素为右值。压栈以后，栈顶元素为左值。和次栈顶元素为右值。
-			operand_push(type, SC_LOCAL | SC_LVAL, value);
+			operand_push(type, SC_LOCAL | SC_LVAL, valueAddr);
 			// 交换栈顶元素和次栈顶元素。栈顶元素变为右值。次栈顶元素变为左值。
 			operand_swap();
 			// 将栈顶操作数也就是右值，存入次栈顶操作数，也就是左值中。
@@ -1984,7 +1980,7 @@ void external_declaration(e_StorageClass iSaveType)
 			    							sec_area, token_code, &addr);
 				// 7. 之后添加符号。
 				sym = var_sym_put(&typeCurrent, storage_class, token_code, addr);
-				//   (2) 将全局变量放人COFF符号表。
+				//   (2) 将全局变量放入COFF符号表。
 			    if (iSaveType == SC_GLOBAL)
 			    {
 				    coffsym_add_update(sym, addr, sec->cSectionIndex, 

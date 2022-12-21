@@ -20,6 +20,14 @@ extern int   g_output_type;
 char *get_file_ext(char *fname);
 int process_command(int argc, char** argv);
 void compile(char * file_name);
+
+/************************************************************************/
+/* 这个程序的用法如下：                                                 */
+/*   1. 设定启动参数为-o HelloWorld.obj -c HelloWorld.c，               */
+/*      生成目标文件。                                                  */
+/*   2. 设定启动参数为-lmsvcrt -o HelloWorld.exe HelloWorld.obj，       */
+/*      生成可执行文件。                                                */
+/************************************************************************/
 int main(int argc, char* argv[])
 {
 	int i,opind;
@@ -116,8 +124,8 @@ char *get_file_ext(char *fname)
 
 void compile(char * file_name)
 {
-	// FILE * fin = fopen(file_name, "rb");
-	// if (!fin)
+	// FILE * compile_fp = fopen(file_name, "rb");
+	// if (!compile_fp)
 	//		printf("Error open %s \r\n", file_name);
 
 	token_init(file_name);

@@ -6,16 +6,16 @@
 
 
 std::vector<Section *> vecSection;
-Section *sec_text,			// 代码节
-		*sec_data,			// 数据节
-		*sec_bss,			// 未初始化数据节
-		*sec_idata,			// 导入表节
-		*sec_rdata,			// 只读数据节
+Section *sec_text,			// 代码节。存储的是可执行代码。
+		*sec_data,			// 数据节。存储可读可写需要初始化的数据。
+		*sec_bss,			// 未初始化数据节。存储可读可写不需要进行始化的数据。
+		*sec_idata,			// 导入节。参见10.2.7。
+		*sec_rdata,			// 只读数据节。存储只读数据。
 		*sec_rel,			// 重定位信息节
 		*sec_symtab,		// 符号表节	
 		*sec_dynsymtab;		// 链接库符号节
 
-int nsec_image;				// 映像文件节个数
+int nsec_image;				// 映像文件（即可执行文件）节个数
 
 extern std::vector<TkWord> tktable;
 extern int sec_text_opcode_offset ;	 	// 指令在代码节位置
@@ -25,7 +25,7 @@ extern int sec_text_opcode_offset ;	 	// 指令在代码节位置
 /*  name:             节名称                                            */
 /*  characteristics:  节属性                                            */
 /*  返回值:           新增加节                                          */
-/*  nsec_image:       全局变量，映像文件中节个数                        */
+/*  nsec_image:       全局变量，映像文件（即可执行文件）中节个数        */
 /************************************************************************/
 Section * section_new(char * section_name, int iCharacteristics)
 {
@@ -37,11 +37,11 @@ Section * section_new(char * section_name, int iCharacteristics)
 	secObj->cSectionIndex      = vecSection.size() + 1;  // Start from 1
 	secObj->bufferSectionData  = (char *)mallocz(sizeof(char) * initSize);
 	secObj->data_allocated     = initSize;
-	// IMAGE_SCN_LNK_REMOVE代表此节不会成为最终形成的映像文件的一部分。
+	// IMAGE_SCN_LNK_REMOVE代表此节不会成为最终形成的映像文件（即可执行文件）的一部分。
 	// 此标志仅对目标文件合法，
-	// 通过这个标志可判断该节是否需要放人映像文件中，
-	// 如果需要放入映像文件， nsec_image自动加1， 
-	// 在所有节新建完成后， nsec_image变量记录了映像文件的节个数。
+	// 通过这个标志可判断该节是否需要放人映像文件（即可执行文件）中，
+	// 如果需要放入映像文件（即可执行文件）， nsec_image自动加1， 
+	// 在所有节新建完成后， nsec_image变量记录了映像文件（即可执行文件）的节个数。
 	if(!(iCharacteristics & IMAGE_SCN_LNK_REMOVE))
 		nsec_image++;
 	vecSection.push_back(secObj);
@@ -183,16 +183,17 @@ int coffsym_add(Section * symtab, char * coffsym_name, int val, int sec_index,
 		WORD typeFunc, char StorageClass)
 {
 	CoffSym * cfsym;
-	int cs, keyno;
+	int symtab_seq, sym_hashkey;
 	char * csname;
+	// 得到关联的节，符号节关联字符串节，
 	Section * strtab = symtab->linkSection;
 	int * symtab_hashtable;
 	// 得到符号表的哈希表
 	symtab_hashtable = symtab->sym_hashtab;
 	// 根据符号名称查找是否存在。
-	cs = coffsym_search(symtab, coffsym_name);
+	symtab_seq = coffsym_search(symtab, coffsym_name);
 	// 如果不存在，就添加。
-	if(cs == 0)  //
+	if(symtab_seq == 0)  //
 	{
 		// 扩充CoffSym来容纳数据。返回的cfsym指向节数据缓冲区的写入位置。
 		cfsym = (CoffSym *)section_ptr_add(symtab, sizeof(CoffSym));
@@ -209,24 +210,24 @@ int coffsym_add(Section * symtab, char * coffsym_name, int val, int sec_index,
 		// 存储类别通常来说都是IMAGE_SYM_CLASS_EXTERNAL。
 		cfsym->storageClass         = StorageClass;
 		// 根据符号名称生成哈希值。
-		keyno = elf_hash(coffsym_name);
+		sym_hashkey = elf_hash(coffsym_name);
 		// 冲突链表指向keyno对应的哈希表项。
 		// 当没有哈希冲突的时候，symtab_hashtable[keyno]不存在为零。
 		// 这就是为什么COFF符号从1开始的原因。
 		// 当存在哈希冲突的时候，symtab_hashtable[keyno]为和keyno一致的CoffSym类型数组下标。
 		// 我们让nextCoffSymName指向它，记住这个值。并且更新symtab_hashtable[keyno]的值。
-		cfsym->nextCoffSymName = symtab_hashtable[keyno];
+		cfsym->nextCoffSymName = symtab_hashtable[sym_hashkey];
 		// 这里有一个技巧，就是我们把节数据缓冲区强转成为CoffSym类型指针。
 		// 也就是强转成为一个CoffSym类型的数组。而cfsym则是指向这个数组一个元素的指针。
 		// 因此上，这里的结算结果就会等于cfsym指向的这个数组元素在整个数组中的下标。
-		cs = cfsym - (CoffSym *)symtab->bufferSectionData;
+		symtab_seq = cfsym - (CoffSym *)symtab->bufferSectionData;
 		// 把计算出来的CoffSym类型数组的下标放入哈希表。
 		// symtab_hashtable[keyno]里面原来的值已经被保存在cfsym->nextCoffSymName里面.
 		// 这样，在coffsym_search中，我们就可以找到cs对应的COFF符号。
 		// 并利用nextCoffSymName找到后续冲突元素的下标。
-		symtab_hashtable[keyno] = cs;
+		symtab_hashtable[sym_hashkey] = symtab_seq;
 	}
-	return cs;
+	return symtab_seq;
 }
 
 /************************************************************************/
@@ -248,7 +249,7 @@ void coffsym_add_update(Symbol *sym, int val, int sec_index,
 		// 根据符号的单词编码取出的单词字符串。
 		coffsym_name = ((TkWord)tktable[sym->token_code]).spelling;
 		// 在符号表节sec_symtab中，添加一个符号。
-		// 返回值是符号COFF符号表中序号，放在related_value中。
+		// 返回值是符号COFF符号表中的序号，放在related_value中。
 		sym->related_value = coffsym_add(sec_symtab, 
 					coffsym_name, val, sec_index, typeFunc, StorageClass);
 	}
@@ -333,29 +334,32 @@ void coffreloc_add(Section * sec, Symbol * sym, int offset, char type_reloc)
 {
 	int cfsym_index;
 	char * token_name;
-	// 如果符号表没有对应的关联值，就为其添加。
+	// 如果符号表没有对应的关联值，就为其在符号表节sec_symtab中，
+	// 添加或更新一个COFF符号。
 	//     定义此符号的节为   - IMAGE_SYM_UNDEFINED
 	//     添加类型为         - CST_FUNC
 	//     COFF符号存储类别为 - IMAGE_SYM_CLASS_EXTERNAL
 	// 
-	// 这个重定位条目，会在resolve_coffsyms中被处理。
+	// 这个符号，会在resolve_coffsyms中被处理。
 	if(!sym->related_value)
 	{
+		// 添加或更新一个COFF符号。并且更新sym->related_value的值。
 		coffsym_add_update(sym, 0, IMAGE_SYM_UNDEFINED, CST_FUNC, 
 			IMAGE_SYM_CLASS_EXTERNAL);
 	}
 	// 根据符号编码获得单词字符串.
 	token_name = ((TkWord)tktable[sym->token_code]).spelling;
-	// 根据单词字符串查找COFF符号。
+	// 根据单词字符串查找COFF符号。这个值其实和sym->related_value一样。
 	cfsym_index = coffsym_search(sec_symtab, token_name);
+	// 添加一个COFF重定位信息。cfsymIndex成员等于cfsym_index。
 	coffreloc_redirect_add(offset, cfsym_index, sec->cSectionIndex, type_reloc);
 }
 
 /************************************************************************/
 /* 功能:            增加COFF重定位信息                                  */
 /* offset:          需要进行重定位的代码或数据在其相应节的偏移位置      */
-/* cfsym:           符号表的索引                                        */
-/* section:         符号所在节的索引                                    */
+/* cfsym_index:     符号表的索引                                        */
+/* section_index:   符号所在节的索引                                    */
 /* type:            重定位类型                                          */
 /************************************************************************/
 void coffreloc_redirect_add(int offset, int cfsym_index, 
@@ -430,7 +434,7 @@ void jmpaddr_backstuff(int fill_offset, int jmp_addr)
 /*         *sec_rel，         //重定位信息节                            */
 /*         *sec_symtab，      //符号表节                                */
 /*         *sec_dynsymtab；   //链接库符号节                            */
-/* in tn sec_image；          //映像文件节个数                          */
+/* int     nsec_image；       //映像文件节个数                          */
 /************************************************************************/
 void init_all_sections_and_coffsyms()
 {
@@ -520,14 +524,15 @@ int load_obj_file(char * file_name)
 {
 	IMAGE_FILE_HEADER file_header;
 	// Section ** secs;
-	int i, section_header_size, nsec_obj = 0, nSym;
+	int i, section_header_size, nsec_obj = 0, nSyms;
 
-	FILE * file_obj ;
-	CoffSym * cfsyms ;
-	CoffSym * cfsym ;
+	FILE * obj_fp ;
+	CoffSym * cfSymTable ;
+	CoffSym * cfSym ;
 
-	char * strs, * cs_name;
-	void * ptr ;
+	char * strSectionPtr, * cs_name;
+	// 节数据写入指针
+	void * sectionDataPtr ;
 	int cur_text_offset ;
 	int cur_rel_offset ;
 	int * old_to_new_syms;
@@ -538,9 +543,9 @@ int load_obj_file(char * file_name)
 	section_header_size = sizeof(IMAGE_SECTION_HEADER);
 	memset(&file_header, 0x00, sizeof(IMAGE_FILE_HEADER));
 	// 打开文件。
-	file_obj = fopen(file_name, "rb");
+	obj_fp = fopen(file_name, "rb");
 	// 读COFF文件头。
-	fread(&file_header, 1, sizeof(IMAGE_FILE_HEADER), file_obj);
+	fread(&file_header, 1, sizeof(IMAGE_FILE_HEADER), obj_fp);
 	// 得到节头个数。
 	nsec_obj = file_header.NumberOfSections;
 	// 读出来每一个节。这里有一个技巧，就是Name是sh的第一个成员。
@@ -550,12 +555,15 @@ int load_obj_file(char * file_name)
 	{
 	//	IMAGE_SECTION_HEADER * testOne = &(vecSection[i]->sh);
 	//	BYTE * testTwo = vecSection[i]->sh.Name;
-		fread(vecSection[i]->sh.Name, 1, section_header_size, file_obj);
+		fread(vecSection[i]->sh.Name, 1, section_header_size, obj_fp);
 	}
-	// 读取代码节偏移
+	// 记下当前代码节偏移。因为data_offset会在下面读代码节的时候变大。
+	// 在只有一个obj文件需要加载的时候，这个值为零。
+	// 但是如果有多个obj文件需要加载，就是加载上一个obj文件以后的代码节偏移。
 	cur_text_offset = sec_text->data_offset;
-	// 读取重定位信息节偏移
+	// 同理，记下当前重定位信息节数据偏移。因为data_offset会在读重定位信息节时变大。
 	cur_rel_offset  = sec_rel->data_offset;
+	// 读每一个节
 	for (i = 0; i < nsec_obj; i++)
 	{
 		// COFF符号表存储在.symtab节中。
@@ -566,24 +574,24 @@ int load_obj_file(char * file_name)
 		if(!strcmp((char *)vecSection[i]->sh.Name, ".symtab"))
 		{
 			// 为COFF符号表分配空间。大小由SizeOfRawData指定。
-			cfsyms = (CoffSym *)mallocz(vecSection[i]->sh.SizeOfRawData);
+			cfSymTable = (CoffSym *)mallocz(vecSection[i]->sh.SizeOfRawData);
 			// 根据PointerToRawData给出的文件偏移位置移动文件指针。
-			fseek(file_obj, 1, vecSection[i]->sh.PointerToRawData);
+			fseek(obj_fp, 1, vecSection[i]->sh.PointerToRawData);
 			// 读出COFF符号表
-			fread(cfsyms, 1, vecSection[i]->sh.SizeOfRawData, file_obj);
+			fread(cfSymTable, 1, vecSection[i]->sh.SizeOfRawData, obj_fp);
 			// 得到COFF符号个数。这8个符号是什么需要通过字符串表才能知道。
-			nSym = vecSection[i]->sh.SizeOfRawData / sizeof(CoffSym);
+			nSyms = vecSection[i]->sh.SizeOfRawData / sizeof(CoffSym);
 			continue;
 		}
 		// COFF字符串表
 		else if(!strcmp((char *)vecSection[i]->sh.Name, ".strtab"))
 		{
 			// 为字符串表分配空间。
-			strs = (char *)mallocz(vecSection[i]->sh.SizeOfRawData);
+			strSectionPtr = (char *)mallocz(vecSection[i]->sh.SizeOfRawData);
 			// 读出所有的字符串、这里是：
 			//     ..data..bss..rdata.main._entry.
-			fseek(file_obj, 1, vecSection[i]->sh.PointerToRawData);
-			fread(strs, 1, vecSection[i]->sh.SizeOfRawData, file_obj);
+			fseek(obj_fp, 1, vecSection[i]->sh.PointerToRawData);
+			fread(strSectionPtr, 1, vecSection[i]->sh.SizeOfRawData, obj_fp);
 			continue;
 		}
 		// 不处理动态符号表和动态字符串表。
@@ -594,42 +602,49 @@ int load_obj_file(char * file_name)
 		}
 		// 代码执行到这里，说明不是符号表和字符串表。
 		// 而是<.text> <.data> <.idata> <.rdata> <.bss> <.rel> 
+		// 也就是代码节，数据节，导入节，只读数据节，未初始化数据节，重定位信息节
 		// 根据PointerToRawData给出的文件偏移位置移动文件指针。
-		fseek(file_obj, SEEK_SET, vecSection[i]->sh.PointerToRawData);
-		// 给节数据预留至少increment大小的内存空间
-		ptr = section_ptr_add(vecSection[i], vecSection[i]->sh.SizeOfRawData);
+		fseek(obj_fp, SEEK_SET, vecSection[i]->sh.PointerToRawData);
+		// 给节数据预留至少increment大小的内存空间。
+		// 这会导致节的data_offset成员变量增加。
+		sectionDataPtr = section_ptr_add(vecSection[i], vecSection[i]->sh.SizeOfRawData);
 		// 读出一个节。
-		fread(ptr, 1, vecSection[i]->sh.SizeOfRawData, file_obj);
+		fread(sectionDataPtr, 1, vecSection[i]->sh.SizeOfRawData, obj_fp);
 	}
 	// 使用COFF符号个数分配指针空间。
-	old_to_new_syms = (int *)mallocz(sizeof(int) * nSym);
+	old_to_new_syms = (int *)mallocz(sizeof(int) * nSyms);
 	// 符号从一开始。因为第一个是符号对应的是空字符串。
-	for (i = 1; i < nSym; i++)
+	for (i = 1; i < nSyms; i++)
 	{
-		// 取得一个符号。
-		cfsym = &cfsyms[i];
+		// 从obj文件读出来的符号表中取得一个符号。
+		cfSym = &cfSymTable[i];
 		// Name字段表示符号名称在字符串表中的偏移位置。
 		// cs_name指向字符串表中当前的字符串。
-		cs_name = strs + cfsym->coffSymName;
-		// 
+		cs_name = strSectionPtr + cfSym->coffSymName;
+		// 把这个符号加入到sec_symtab节中。
 		cfsym_index = coffsym_add(sec_symtab, cs_name,
-			cfsym->coff_sym_value, cfsym->shortSectionNumber, 
-			cfsym->typeFunc,       cfsym->storageClass);
+			cfSym->coff_sym_value, cfSym->shortSectionNumber, 
+			cfSym->typeFunc,       cfSym->storageClass);
+		// 记住每一个符号在COFF符号表中的序号。
 		old_to_new_syms[i] = cfsym_index;
 	}
-	// 重定位信息节。
+	// 得到加载的目标文件的在重定位信息节中的起始位置和结束位置。
+	// 使用目标文件的信息生成重定位信息
 	rel     = (CoffReloc *)(sec_rel->bufferSectionData + cur_rel_offset);
 	rel_end = (CoffReloc *)(sec_rel->bufferSectionData + sec_rel->data_offset);
 	for (; rel < rel_end; rel++)
 	{
+		// 得到重定位信息表索引。
 		cfsym_index  = rel->cfsymIndex;
+		// 得到对应的符号表索引。也就是把重定位信息表索引替换成符号表索引。
 		rel->cfsymIndex   = old_to_new_syms[cfsym_index];
-		rel->offsetAddr  += cur_rel_offset;
+		// 重定位的代码或数据的地址需要加上当前代码节偏移。
+		rel->offsetAddr  += cur_text_offset;
 	}
-	free(cfsyms);
-	free(strs);
+	free(cfSymTable);
+	free(strSectionPtr);
 	free(old_to_new_syms);
-	fclose(file_obj);
+	fclose(obj_fp);
 	return 1;
 }
 
@@ -648,7 +663,7 @@ void output_obj_file(char * file_name)
 	// We have  <.text> <.data> <.idata> <.rdata> <.bss> <.rel> 
 	//    <.symtab> <.strtab> <.dynsym> <.dynstr>.
 	// 计算节头个数。这里减去<.dynsym> <.dynstr>两个节。
-	// 因为，映像文件中不包含COFF重定位信息。
+	// 因为，映像文件（即可执行文件）中不包含COFF重定位信息。
 	nsec_obj = vecSection.size() -2 ;
 	sh_size  = sizeof(IMAGE_SECTION_HEADER);
 	// 计算文件大小。为COFF文件头 + 节头大小 * 节头数。

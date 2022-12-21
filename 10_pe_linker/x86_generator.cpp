@@ -14,15 +14,16 @@
 #define FUNC_PROLOG_SIZE      9
 
 /* 本章用到的全局变量 */
-// int return_symbol_pos;			// 记录return指令位置
-int sec_text_opcode_offset = 0;    // 指令在代码节位置
+// int return_symbol_pos;		// 记录return指令位置
+int sec_text_opcode_offset = 0; // 指令在代码节位置
 int function_stack_loc = 0;		// 局部变量在栈中位置。
 								// 因为栈顶是零，这个值基本上一直是一个负数。
 								// 
 int func_begin_ind;				// 函数开始指令
 int func_ret_sub;				// 函数返回释放栈空间大小。默认是零。
 								// 但是如果指定了__stdcall关键字，就不是零。
-
+								
+extern	Section *sec_text;		// 代码节
 extern Type int_type;			// int类型
 
 // 生成函数

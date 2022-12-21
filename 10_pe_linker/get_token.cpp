@@ -115,20 +115,20 @@ void string_output_status_tailoperation()
 
 int load_program(char *p, char *pname)
 {
-  FILE *fp = 0 ;
+  FILE *program_fp = 0 ;
   int i=0;
   
-  if(!(fp=fopen(pname, "rb"))){
+  if(!(program_fp=fopen(pname, "rb"))){
       printf("load_program failed : %s\n", pname);
       return 0;
   }
 
   do {
-    *p = getc(fp);
+    *p = getc(program_fp);
     p++; i++;
-  }while(!feof(fp) && i<PROG_SIZE);
+  }while(!feof(program_fp) && i<PROG_SIZE);
   *(p-2) = '\0'; /* null terminate the program */
-  fclose(fp);
+  fclose(program_fp);
   return 1;
 }
 

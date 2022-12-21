@@ -1,14 +1,7 @@
 #include "opcode_generator.h"
 #include "coff_generator.h"
 
-extern Section *sec_text,	// 代码节
-		*sec_data,			// 数据节
-		*sec_bss,			// 未初始化数据节
-		*sec_idata,			// 导入表节
-		*sec_rdata,			// 只读数据节
-		*sec_rel,			// 重定位信息节
-		*sec_symtab,		// 符号表节	
-		*sec_dynsymtab;		// 链接库符号节
+extern Section *sec_text;	// 代码节
 
 extern int sec_text_opcode_offset ;	 	// 指令在代码节位置
 
